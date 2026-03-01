@@ -48,6 +48,7 @@ Variables de entorno:
 - `ANALYSIS_WORKERS`: número de workers de análisis (por defecto: `min(4, cpu-1)` y mínimo `1`).
 - `ANALYSIS_QUEUE_LIMIT`: máximo de solicitudes en cola (por defecto: `48`).
 - `REQUEST_BODY_LIMIT`: tamaño máximo del body JSON para subida (`/api/analyze/upload`), por defecto `80mb`.
+- `HTTPS_PROXY` / `HTTP_PROXY`: proxy de salida para estaciones VDI con red corporativa restringida.
 
 Si la cola se llena, la API responde `503` para proteger estabilidad del servicio.
 

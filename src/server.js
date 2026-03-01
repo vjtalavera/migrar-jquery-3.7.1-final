@@ -414,6 +414,22 @@ app.post("/api/knowledge/refresh", async (req, res) => {
       summary: getKnowledgeSummary(knowledge),
     });
   } catch (error) {
+    const cachedKnowledge = await ensureKnowledge({
+      forceRefresh: false,
+      useWebFallback: false,
+    }).catch(() => null);
+
+    if (cachedKnowledge) {
+      const fallbackMessage =
+        "No se pudo actualizar desde api.jquery.com; se mantiene la base local cacheada.";
+      res.json({
+        ok: true,
+        summary: getKnowledgeSummary(cachedKnowledge),
+        warning: `${fallbackMessage} Detalle técnico: ${error.message}`,
+      });
+      return;
+    }
+
     res.status(500).json({
       ok: false,
       error: error.message,

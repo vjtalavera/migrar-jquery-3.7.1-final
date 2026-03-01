@@ -34,7 +34,18 @@ async function fetchText(url, options = {}) {
 
       return await response.text();
     } catch (error) {
-      lastError = error;
+      const baseMessage = error instanceof Error ? error.message : String(error);
+      const proxyHint =
+        baseMessage.includes("fetch failed") &&
+        !(
+          process.env.HTTPS_PROXY ||
+          process.env.https_proxy ||
+          process.env.HTTP_PROXY ||
+          process.env.http_proxy
+        )
+          ? " Configura HTTPS_PROXY/HTTP_PROXY si tu red VDI usa proxy corporativo."
+          : "";
+      lastError = new Error(`No se pudo obtener ${url}: ${baseMessage}.${proxyHint}`);
 
       if (attempt < retries) {
         await delay(350 * (attempt + 1));

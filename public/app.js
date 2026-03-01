@@ -19,7 +19,6 @@ const elements = {
 
 const ALLOWED_EXTENSIONS = new Set([".jsp", ".js", ".html", ".htm"]);
 const MAX_INITIAL_RENDERED_FILE_GROUPS = 600;
-const MAX_INITIAL_CATALOG_ROWS = 900;
 const uploadFilesByPath = new Map();
 let renderedFilesByPath = new Map();
 const previewContentCache = new Map();
@@ -27,7 +26,6 @@ const previewContentLoaders = new Map();
 let includesScrollSyncRaf = 0;
 let activeAnalysisSession = null;
 let catalogFilterText = "";
-let catalogVisibleRows = MAX_INITIAL_CATALOG_ROWS;
 
 function getExtension(fileName) {
   const index = fileName.lastIndexOf(".");
@@ -179,7 +177,6 @@ function clearRenderedResults() {
   clearPreviewState();
   activeAnalysisSession = null;
   catalogFilterText = "";
-  catalogVisibleRows = MAX_INITIAL_CATALOG_ROWS;
   elements.resultTime.textContent = "Sin ejecución";
   hideAnalysisProgress();
   elements.summaryCards.innerHTML = "";
@@ -521,14 +518,9 @@ function getFilteredSessionFiles(session) {
   return files.filter((item) => String(item.path || "").toLowerCase().includes(needle));
 }
 
-function renderSessionCatalog(session, options = {}) {
-  const maxRows =
-    Number.isInteger(options.maxRows) && options.maxRows > 0
-      ? options.maxRows
-      : catalogVisibleRows;
+function renderSessionCatalog(session) {
   const files = getFilteredSessionFiles(session);
-  const visibleFiles = files.slice(0, maxRows);
-  const hiddenCount = files.length - visibleFiles.length;
+  const visibleFiles = files;
 
   elements.groupedResults.innerHTML = `
     <div class="session-catalog">
@@ -553,7 +545,6 @@ function renderSessionCatalog(session, options = {}) {
                       class="session-file-item"
                       data-file-path="${escapeAttribute(item.path)}"
                     >
-                      <span class="session-file-name">${escapeHtml(fileBaseName(item.path))}</span>
                       <code class="session-file-path">${escapeHtml(item.path)}</code>
                     </button>
                   `,
@@ -562,24 +553,13 @@ function renderSessionCatalog(session, options = {}) {
             : '<div class="empty-row">No hay archivos que coincidan con el filtro.</div>'
         }
       </div>
-      ${
-        hiddenCount > 0
-          ? `
-            <div class="results-overflow-note">
-              Se muestran ${visibleFiles.length} de ${files.length} archivos.
-              <button id="showMoreSessionFilesBtn" class="btn btn-primary" type="button">
-                Mostrar ${hiddenCount} archivos más
-              </button>
-            </div>
-          `
-          : ""
-      }
     </div>
   `;
 }
 
 function renderFindingsRows(findings, files = [], options = {}) {
   const collapseAll = Boolean(options.collapseAll);
+  const selectedFilePath = String(options.selectedFile || "").trim();
   const maxFileGroups =
     Number.isInteger(options.maxFileGroups) && options.maxFileGroups > 0
       ? options.maxFileGroups
@@ -590,7 +570,7 @@ function renderFindingsRows(findings, files = [], options = {}) {
   renderedFilesByPath = filesByPath;
   const analyzedFilePaths = files.map((file) => file.path);
 
-  if (!findings.length) {
+  if (!findings.length && analyzedFilePaths.length === 0) {
     elements.groupedResults.innerHTML = `
       <div class="empty-row empty-block">No se detectaron APIs deprecadas/obsoletas con las reglas cargadas.</div>
     `;
@@ -619,8 +599,16 @@ function renderFindingsRows(findings, files = [], options = {}) {
   }
 
   const sortedFiles = Array.from(
-    new Set([...groupedByFile.keys(), ...includeTargetPaths]),
+    new Set([...analyzedFilePaths, ...groupedByFile.keys(), ...includeTargetPaths]),
   ).sort((a, b) => a.localeCompare(b));
+
+  if (selectedFilePath) {
+    const selectedIndex = sortedFiles.indexOf(selectedFilePath);
+    if (selectedIndex > 0) {
+      sortedFiles.splice(selectedIndex, 1);
+      sortedFiles.unshift(selectedFilePath);
+    }
+  }
   const visibleFiles = maxFileGroups > 0
     ? sortedFiles.slice(0, maxFileGroups)
     : sortedFiles;
@@ -1069,9 +1057,7 @@ function bindResultsInteractions() {
         return;
       }
       renderSessionCards(activeAnalysisSession);
-      renderSessionCatalog(activeAnalysisSession, {
-        maxRows: catalogVisibleRows,
-      });
+      renderSessionCatalog(activeAnalysisSession);
       bindSessionCatalogInteractions();
     });
   }
@@ -1090,10 +1076,7 @@ function bindSessionCatalogInteractions() {
         typeof filterInput.selectionEnd === "number"
           ? filterInput.selectionEnd
           : catalogFilterText.length;
-      catalogVisibleRows = MAX_INITIAL_CATALOG_ROWS;
-      renderSessionCatalog(activeAnalysisSession, {
-        maxRows: catalogVisibleRows,
-      });
+      renderSessionCatalog(activeAnalysisSession);
       bindSessionCatalogInteractions();
 
       const nextFilterInput = document.getElementById("sessionCatalogFilter");
@@ -1117,16 +1100,6 @@ function bindSessionCatalogInteractions() {
     });
   });
 
-  const showMoreBtn = document.getElementById("showMoreSessionFilesBtn");
-  if (showMoreBtn instanceof HTMLButtonElement) {
-    showMoreBtn.addEventListener("click", () => {
-      catalogVisibleRows += MAX_INITIAL_CATALOG_ROWS;
-      renderSessionCatalog(activeAnalysisSession, {
-        maxRows: catalogVisibleRows,
-      });
-      bindSessionCatalogInteractions();
-    });
-  }
 }
 
 async function analyzeSelectedSessionFile(filePath) {
@@ -1165,6 +1138,8 @@ function renderAnalysis(analysis, options = {}) {
   renderSummaryCards(analysis.summary);
   const rowsOptions = {
     ...options,
+    selectedFile:
+      options.selectedFile === undefined ? analysis.selectedFile : options.selectedFile,
     maxFileGroups:
       options.maxFileGroups === undefined
         ? MAX_INITIAL_RENDERED_FILE_GROUPS
@@ -1247,6 +1222,12 @@ async function refreshKnowledge() {
       }),
     });
     renderKnowledgeSummary(data.summary);
+    if (data.warning) {
+      setKnowledgeStatus(
+        `${elements.knowledgeStatus.textContent} | Aviso: ${data.warning}`,
+        "loading",
+      );
+    }
   } finally {
     elements.refreshKnowledgeBtn.disabled = false;
   }
@@ -1260,12 +1241,9 @@ function handlePreparedSession(payload) {
 
   activeAnalysisSession = session;
   catalogFilterText = "";
-  catalogVisibleRows = MAX_INITIAL_CATALOG_ROWS;
   clearPreviewState();
   renderSessionCards(session);
-  renderSessionCatalog(session, {
-    maxRows: MAX_INITIAL_CATALOG_ROWS,
-  });
+  renderSessionCatalog(session);
   bindSessionCatalogInteractions();
 
   const missing = Array.isArray(session.missingPaths) ? session.missingPaths : [];

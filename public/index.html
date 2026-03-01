@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260301-3" />
+    <link rel="stylesheet" href="./styles.css?v=20260301-5" />
   </head>
   <body>
     <div class="ambient-shape shape-a"></div>
@@ -28,7 +28,7 @@
       </header>
 
       <section class="grid two-cols">
-        <article class="panel">
+        <article class="panel knowledge-panel compact-panel">
           <div class="panel-head">
             <h2>Base de Conocimiento</h2>
             <button id="refreshKnowledgeBtn" class="btn btn-primary">
@@ -44,7 +44,7 @@
           </div>
         </article>
 
-        <article class="panel">
+        <article class="panel paths-panel compact-panel">
           <h2>Escaneo por rutas locales</h2>
           <p class="muted">
             Introduce rutas absolutas de archivos o carpetas (una por línea).
@@ -52,7 +52,7 @@
           <textarea
             id="pathsInput"
             placeholder="C:\proyecto-legacy\src&#10;C:\proyecto-legacy\web\index.jsp"
-            rows="8"
+            rows="5"
           ></textarea>
           <button id="analyzePathsBtn" class="btn btn-accent">
             Analizar rutas
@@ -60,7 +60,7 @@
         </article>
       </section>
 
-      <section class="panel">
+      <section class="panel results-panel">
         <h2>Escaneo por selección de archivos/carpeta</h2>
         <p class="muted">
           Selecciona archivos individuales o una carpeta completa. Solo se
@@ -106,6 +106,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=20260301-3"></script>
+    <script type="module" src="./app.js?v=20260301-5"></script>
   </body>
 </html>
