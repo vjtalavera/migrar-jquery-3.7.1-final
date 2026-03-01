@@ -632,24 +632,24 @@ td {
 
 .file-results-table th:nth-child(1),
 .file-results-table td:nth-child(1) {
-  width: 3.2%;
-  min-width: 34px;
+  width: 2.6%;
+  min-width: 28px;
 }
 
 .file-results-table th:nth-child(2),
 .file-results-table td:nth-child(2) {
-  width: 1.4%;
-  min-width: 17px;
+  width: 2.2%;
+  min-width: 44px;
 }
 
 .file-results-table th:nth-child(3),
 .file-results-table td:nth-child(3) {
-  width: 25.2%;
+  width: 25.8%;
 }
 
 .file-results-table th:nth-child(4),
 .file-results-table td:nth-child(4) {
-  width: 24.1%;
+  width: 24.7%;
 }
 
 .file-results-table th:nth-child(5),
@@ -793,8 +793,8 @@ th {
 .sev-pill {
   display: inline-flex;
   border-radius: 999px;
-  font-size: 0.55rem;
-  padding: 3px 6px;
+  font-size: 0.52rem;
+  padding: 2px 5px;
   font-weight: 700;
   border: 1px solid transparent;
   letter-spacing: 0.01em;
@@ -859,6 +859,13 @@ th {
 
 .file-results-table td:nth-child(5) a {
   font-size: 0.66rem;
+}
+
+.file-results-table td:nth-child(2) code {
+  font-size: 0.8rem;
+  min-width: 4.8ch;
+  display: inline-block;
+  text-align: right;
 }
 
 code.localized-line {

@@ -254,8 +254,8 @@ function transformIsFunctionLine(line) {
     return null;
   }
   return line.replace(
-    /(?:\$jq|\$|jQuery)\s*\.\s*isFunction\s*\(([^)]+)\)/i,
-    'typeof $1 === "function"',
+    /(?:\$jq|\$|jQuery)\s*\.\s*isFunction\s*\(([^)]+)\)/gi,
+    (_fullMatch, valueExpr) => `typeof ${valueExpr} === "function"`,
   );
 }
 

@@ -171,6 +171,47 @@ test("genera correccion para deferred.pipe, die e isFunction", () => {
   );
 });
 
+test("corrige todas las llamadas jQuery.isFunction en la misma línea", () => {
+  const knowledge = {
+    entries: [
+      {
+        title: "jQuery.isFunction()",
+        slug: "jQuery.isFunction",
+        url: "https://api.jquery.com/jQuery.isFunction/",
+        status: ["deprecated"],
+        deprecatedIn: "3.3",
+        removedIn: "4.0",
+        replacements: ['Usa `typeof value === "function"`'],
+        detection: {
+          kind: "globalMethod",
+          token: "isFunction",
+          pathParts: ["isFunction"],
+        },
+      },
+    ],
+  };
+
+  const report = analyzeUploadedFiles(
+    [
+      {
+        path: "demo.js",
+        content: 'return jQuery.isFunction(fn) && jQuery.isFunction(fn2) ?',
+      },
+    ],
+    knowledge,
+  );
+
+  assert.equal(report.findings.length, 2);
+  assert.equal(
+    report.findings[0].correctedInstruction,
+    'return typeof fn === "function" && typeof fn2 === "function" ?',
+  );
+  assert.equal(
+    report.findings[1].correctedInstruction,
+    'return typeof fn === "function" && typeof fn2 === "function" ?',
+  );
+});
+
 test("genera correccion para bind a on", () => {
   const knowledge = {
     entries: [
