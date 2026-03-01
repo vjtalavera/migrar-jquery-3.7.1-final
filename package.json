@@ -1,0 +1,25 @@
+{
+  "name": "migrar-jquery-3.7.1-final",
+  "version": "1.0.0",
+  "description": "Analizador profesional para migrar proyectos legacy a jQuery 3.7.1",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node src/server.js",
+    "start": "node src/server.js",
+    "build:knowledge": "node src/cli/build-knowledge.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "jquery",
+    "migration",
+    "legacy",
+    "frontend",
+    "analyzer"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "express": "^5.2.1"
+  }
+}

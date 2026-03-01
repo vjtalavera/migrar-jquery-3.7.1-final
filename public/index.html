@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Migrador jQuery 3.7.1</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css?v=20260301-2" />
+  </head>
+  <body>
+    <div class="ambient-shape shape-a"></div>
+    <div class="ambient-shape shape-b"></div>
+
+    <main class="app-shell">
+      <header class="hero">
+        <p class="eyebrow">Migración Legacy</p>
+        <h1>Analizador Profesional jQuery 3.7.1</h1>
+        <p class="hero-copy">
+          Rastrea APIs deprecadas y obsoletas desde <code>api.jquery.com</code>,
+          analiza archivos <code>jsp/js/html/htm</code> y propone correcciones
+          para la migración.
+        </p>
+      </header>
+
+      <section class="grid two-cols">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Base de Conocimiento</h2>
+            <button id="refreshKnowledgeBtn" class="btn btn-primary">
+              Actualizar desde API
+            </button>
+          </div>
+          <label class="checkbox-row">
+            <input type="checkbox" id="webFallbackCheckbox" />
+            <span>Activar fallback web (La Corrección / Código Corregido)</span>
+          </label>
+          <div id="knowledgeStatus" class="status-box loading">
+            Cargando estado de conocimiento...
+          </div>
+        </article>
+
+        <article class="panel">
+          <h2>Escaneo por rutas locales</h2>
+          <p class="muted">
+            Introduce rutas absolutas de archivos o carpetas (una por línea).
+          </p>
+          <textarea
+            id="pathsInput"
+            placeholder="C:\proyecto-legacy\src&#10;C:\proyecto-legacy\web\index.jsp"
+            rows="8"
+          ></textarea>
+          <button id="analyzePathsBtn" class="btn btn-accent">
+            Analizar rutas
+          </button>
+        </article>
+      </section>
+
+      <section class="panel">
+        <h2>Escaneo por selección de archivos/carpeta</h2>
+        <p class="muted">
+          Selecciona archivos individuales o una carpeta completa. Solo se
+          procesarán <code>.jsp</code>, <code>.js</code>, <code>.html</code>,
+          <code>.htm</code>.
+        </p>
+        <div class="picker-row">
+          <label class="picker-btn">
+            <input id="filesPicker" type="file" multiple />
+            Elegir archivos
+          </label>
+          <label class="picker-btn">
+            <input id="folderPicker" type="file" webkitdirectory directory multiple />
+            Elegir carpeta
+          </label>
+          <button id="analyzeUploadBtn" class="btn btn-accent">
+            Analizar selección
+          </button>
+        </div>
+        <div id="uploadSummary" class="status-box">Sin archivos seleccionados.</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Resultados</h2>
+          <span id="resultTime" class="badge">Sin ejecución</span>
+        </div>
+        <div id="analysisProgress" class="analysis-progress hidden">
+          <div class="analysis-progress-head">
+            <span id="analysisProgressLabel">Preparando análisis...</span>
+            <span id="analysisProgressValue">0%</span>
+          </div>
+          <div class="analysis-progress-track">
+            <div id="analysisProgressBar" class="analysis-progress-bar"></div>
+          </div>
+        </div>
+        <div id="summaryCards" class="summary-cards"></div>
+        <div id="groupedResults" class="grouped-results">
+          <div class="empty-row empty-block">
+            Ejecuta un análisis para ver hallazgos.
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js?v=20260301-2"></script>
+  </body>
+</html>

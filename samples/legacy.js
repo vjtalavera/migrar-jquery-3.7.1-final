@@ -1,0 +1,1 @@
+$('#x').size(); $.parseJSON(raw); $('li:odd').click(fn);
