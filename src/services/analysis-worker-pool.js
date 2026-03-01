@@ -227,6 +227,18 @@ class AnalysisWorkerPool {
     );
   }
 
+  analyzeSources(files, knowledge, options = {}) {
+    return this.enqueue(
+      "sources",
+      {
+        files,
+        sourceType: options.sourceType || "path",
+      },
+      knowledge,
+      options,
+    );
+  }
+
   getStats() {
     const busyWorkers = this.workers.filter((state) => state?.busy).length;
     return {

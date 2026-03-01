@@ -58,12 +58,15 @@ Si la cola se llena, la API responde `503` para proteger estabilidad del servici
 3. Analiza por:
    - rutas locales absolutas (archivos/carpetas), o
    - selección de archivos/carpeta en el navegador.
-4. Revisa severidad, línea, API detectada y corrección propuesta.
+4. La aplicación prepara una sesión de archivos (sin analizar reglas todavía).
+5. Selecciona un archivo en el listado para lanzar análisis de ese archivo + includes recursivos.
+6. Revisa severidad, línea, API detectada y corrección propuesta.
 
 Durante el análisis verás barra de progreso `0% -> 100%` en UI.  
 Internamente la API usa ejecución asíncrona por `jobId`:
 
-- `POST /api/analyze/paths` y `POST /api/analyze/upload` devuelven `202` + `jobId`.
+- `POST /api/analyze/paths` y `POST /api/analyze/upload` preparan sesión y devuelven `202` + `jobId`.
+- `POST /api/analyze/session-file` analiza un archivo seleccionado y sus includes recursivos.
 - `GET /api/analyze/jobs/:jobId` devuelve solo estado/progreso.
 - `GET /api/analyze/jobs/:jobId/result` devuelve el resultado final cuando el job termina.
 

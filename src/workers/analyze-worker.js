@@ -4,6 +4,7 @@ const { parentPort } = require("node:worker_threads");
 const {
   analyzePathInputs,
   analyzeUploadedFiles,
+  analyzeProvidedSources,
 } = require("../services/analyzer");
 
 if (!parentPort) {
@@ -37,6 +38,11 @@ parentPort.on("message", async (task) => {
     } else if (task.type === "uploads") {
       analysis = analyzeUploadedFiles(task.payload?.files || [], task.knowledge, {
         onProgress: emitProgress,
+      });
+    } else if (task.type === "sources") {
+      analysis = analyzeProvidedSources(task.payload?.files || [], task.knowledge, {
+        onProgress: emitProgress,
+        sourceType: task.payload?.sourceType || "path",
       });
     } else {
       throw new Error(`Tipo de análisis no soportado: ${task.type}`);

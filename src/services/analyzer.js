@@ -767,7 +767,38 @@ function analyzeUploadedFiles(uploadFiles, knowledge, options = {}) {
   return analysis;
 }
 
+function analyzeProvidedSources(files, knowledge, options = {}) {
+  const onProgress =
+    typeof options.onProgress === "function" ? options.onProgress : null;
+  const sourceType = options.sourceType || "path";
+  const normalized = Array.isArray(files)
+    ? files
+        .filter((item) => item && typeof item.path === "string")
+        .map((item) => ({
+          path: item.path,
+          content: String(item.content || ""),
+        }))
+    : [];
+
+  const analysis = analyzeSources(normalized, knowledge, {
+    sourceType,
+    onProgress,
+  });
+
+  onProgress?.({
+    stage: "done",
+    message: "Análisis completado.",
+    progress: 100,
+    totalFiles: analysis.summary.totalFilesAnalyzed,
+    processedFiles: analysis.summary.totalFilesAnalyzed,
+  });
+
+  return analysis;
+}
+
 module.exports = {
   analyzePathInputs,
   analyzeUploadedFiles,
+  analyzeProvidedSources,
+  extractIncludedReferences,
 };

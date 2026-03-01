@@ -19,11 +19,15 @@ const elements = {
 
 const ALLOWED_EXTENSIONS = new Set([".jsp", ".js", ".html", ".htm"]);
 const MAX_INITIAL_RENDERED_FILE_GROUPS = 600;
+const MAX_INITIAL_CATALOG_ROWS = 900;
 const uploadFilesByPath = new Map();
 let renderedFilesByPath = new Map();
 const previewContentCache = new Map();
 const previewContentLoaders = new Map();
 let includesScrollSyncRaf = 0;
+let activeAnalysisSession = null;
+let catalogFilterText = "";
+let catalogVisibleRows = MAX_INITIAL_CATALOG_ROWS;
 
 function getExtension(fileName) {
   const index = fileName.lastIndexOf(".");
@@ -147,8 +151,35 @@ function renderSummaryCards(summary) {
     .join("");
 }
 
+function renderSessionCards(session) {
+  if (!session) {
+    elements.summaryCards.innerHTML = "";
+    return;
+  }
+
+  const cards = [
+    ["Archivos disponibles", session.totalFiles || 0],
+    ["Modo", session.type === "upload" ? "Selección local" : "Rutas"],
+    ["Estado", "Pendiente de análisis"],
+  ];
+
+  elements.summaryCards.innerHTML = cards
+    .map(
+      ([label, value]) => `
+      <article class="summary-card">
+        <div class="label">${escapeHtml(label)}</div>
+        <div class="value">${escapeHtml(value)}</div>
+      </article>
+    `,
+    )
+    .join("");
+}
+
 function clearRenderedResults() {
   clearPreviewState();
+  activeAnalysisSession = null;
+  catalogFilterText = "";
+  catalogVisibleRows = MAX_INITIAL_CATALOG_ROWS;
   elements.resultTime.textContent = "Sin ejecución";
   hideAnalysisProgress();
   elements.summaryCards.innerHTML = "";
@@ -208,7 +239,7 @@ async function flushUi() {
 
 function fallbackStageMessage(job) {
   if (!job || typeof job !== "object") {
-    return "Analizando archivos...";
+    return "Procesando solicitud...";
   }
 
   if (job.stage === "queue" || job.status === "queued") {
@@ -223,13 +254,19 @@ function fallbackStageMessage(job) {
   if (job.stage === "read-files") {
     return "Cargando contenido de archivos...";
   }
+  if (job.stage === "prepare-session") {
+    return "Preparando sesión de archivos...";
+  }
   if (job.stage === "prepare-upload") {
     return "Preparando archivos seleccionados...";
   }
-  if (job.stage === "done" || job.status === "done") {
-    return "Análisis completado.";
+  if (job.stage === "resolve-includes") {
+    return "Resolviendo includes recursivos...";
   }
-  return "Analizando archivos...";
+  if (job.stage === "done" || job.status === "done") {
+    return "Proceso completado.";
+  }
+  return "Procesando solicitud...";
 }
 
 async function waitForAnalysisJob(jobId) {
@@ -246,10 +283,17 @@ async function waitForAnalysisJob(jobId) {
     const processedFiles = Number(job.processedFiles || 0);
     const totalFiles = Number(job.totalFiles || 0);
     const finishedScanning = totalFiles > 0 && processedFiles >= totalFiles;
-    if (job.status !== "done" && job.status !== "error" && finishedScanning) {
+    const canUseFastCompleteHint =
+      job.stage === "analyze-files" || job.stage === "resolve-includes";
+    if (
+      job.status !== "done" &&
+      job.status !== "error" &&
+      finishedScanning &&
+      canUseFastCompleteHint
+    ) {
       updateAnalysisProgress(
         100,
-        "Archivos escaneados. Preparando resultados...",
+        "Archivos procesados. Finalizando...",
         "running",
       );
     } else {
@@ -263,7 +307,7 @@ async function waitForAnalysisJob(jobId) {
     if (job.status === "done") {
       updateAnalysisProgress(
         100,
-        "Archivos escaneados. Descargando resultados...",
+        "Descargando resultado...",
         "running",
       );
       await flushUi();
@@ -462,6 +506,78 @@ function renderPreviewContent(content) {
     .join("");
 }
 
+function fileBaseName(filePath) {
+  const normalized = String(filePath || "").replace(/\\/g, "/");
+  const chunks = normalized.split("/").filter(Boolean);
+  return chunks[chunks.length - 1] || normalized;
+}
+
+function getFilteredSessionFiles(session) {
+  const files = Array.isArray(session?.files) ? session.files : [];
+  const needle = catalogFilterText.trim().toLowerCase();
+  if (!needle) {
+    return files;
+  }
+  return files.filter((item) => String(item.path || "").toLowerCase().includes(needle));
+}
+
+function renderSessionCatalog(session, options = {}) {
+  const maxRows =
+    Number.isInteger(options.maxRows) && options.maxRows > 0
+      ? options.maxRows
+      : catalogVisibleRows;
+  const files = getFilteredSessionFiles(session);
+  const visibleFiles = files.slice(0, maxRows);
+  const hiddenCount = files.length - visibleFiles.length;
+
+  elements.groupedResults.innerHTML = `
+    <div class="session-catalog">
+      <div class="session-catalog-head">
+        <input
+          id="sessionCatalogFilter"
+          class="session-catalog-filter"
+          type="search"
+          placeholder="Filtrar por ruta o archivo..."
+          value="${escapeAttribute(catalogFilterText)}"
+        />
+        <span class="session-catalog-count">${files.length} archivos</span>
+      </div>
+      <div class="session-catalog-list">
+        ${
+          visibleFiles.length > 0
+            ? visibleFiles
+                .map(
+                  (item) => `
+                    <button
+                      type="button"
+                      class="session-file-item"
+                      data-file-path="${escapeAttribute(item.path)}"
+                    >
+                      <span class="session-file-name">${escapeHtml(fileBaseName(item.path))}</span>
+                      <code class="session-file-path">${escapeHtml(item.path)}</code>
+                    </button>
+                  `,
+                )
+                .join("")
+            : '<div class="empty-row">No hay archivos que coincidan con el filtro.</div>'
+        }
+      </div>
+      ${
+        hiddenCount > 0
+          ? `
+            <div class="results-overflow-note">
+              Se muestran ${visibleFiles.length} de ${files.length} archivos.
+              <button id="showMoreSessionFilesBtn" class="btn btn-primary" type="button">
+                Mostrar ${hiddenCount} archivos más
+              </button>
+            </div>
+          `
+          : ""
+      }
+    </div>
+  `;
+}
+
 function renderFindingsRows(findings, files = [], options = {}) {
   const collapseAll = Boolean(options.collapseAll);
   const maxFileGroups =
@@ -606,7 +722,7 @@ function renderFindingsRows(findings, files = [], options = {}) {
 
       const previewRow = `
         <tr class="preview-row hidden" data-preview-row-path="${escapeAttribute(filePath)}">
-          <td colspan="5">
+          <td colspan="5" class="preview-main-col">
             <div class="inline-file-preview-table">
               <div class="inline-file-preview-body">
                 <div class="preview-placeholder">Selecciona una línea para cargar el preview del archivo.</div>
@@ -945,6 +1061,102 @@ function bindResultsInteractions() {
       }, 0);
     });
   }
+
+  const backToCatalogBtn = document.getElementById("backToCatalogBtn");
+  if (backToCatalogBtn instanceof HTMLButtonElement) {
+    backToCatalogBtn.addEventListener("click", () => {
+      if (!activeAnalysisSession) {
+        return;
+      }
+      renderSessionCards(activeAnalysisSession);
+      renderSessionCatalog(activeAnalysisSession, {
+        maxRows: catalogVisibleRows,
+      });
+      bindSessionCatalogInteractions();
+    });
+  }
+}
+
+function bindSessionCatalogInteractions() {
+  const filterInput = document.getElementById("sessionCatalogFilter");
+  if (filterInput instanceof HTMLInputElement) {
+    filterInput.addEventListener("input", () => {
+      catalogFilterText = filterInput.value || "";
+      const cursorStart =
+        typeof filterInput.selectionStart === "number"
+          ? filterInput.selectionStart
+          : catalogFilterText.length;
+      const cursorEnd =
+        typeof filterInput.selectionEnd === "number"
+          ? filterInput.selectionEnd
+          : catalogFilterText.length;
+      catalogVisibleRows = MAX_INITIAL_CATALOG_ROWS;
+      renderSessionCatalog(activeAnalysisSession, {
+        maxRows: catalogVisibleRows,
+      });
+      bindSessionCatalogInteractions();
+
+      const nextFilterInput = document.getElementById("sessionCatalogFilter");
+      if (nextFilterInput instanceof HTMLInputElement) {
+        nextFilterInput.focus();
+        const maxPos = nextFilterInput.value.length;
+        const safeStart = Math.min(cursorStart, maxPos);
+        const safeEnd = Math.min(cursorEnd, maxPos);
+        nextFilterInput.setSelectionRange(safeStart, safeEnd);
+      }
+    });
+  }
+
+  elements.groupedResults.querySelectorAll(".session-file-item").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const filePath = btn.dataset.filePath;
+      if (!filePath) {
+        return;
+      }
+      analyzeSelectedSessionFile(filePath).catch(showError);
+    });
+  });
+
+  const showMoreBtn = document.getElementById("showMoreSessionFilesBtn");
+  if (showMoreBtn instanceof HTMLButtonElement) {
+    showMoreBtn.addEventListener("click", () => {
+      catalogVisibleRows += MAX_INITIAL_CATALOG_ROWS;
+      renderSessionCatalog(activeAnalysisSession, {
+        maxRows: catalogVisibleRows,
+      });
+      bindSessionCatalogInteractions();
+    });
+  }
+}
+
+async function analyzeSelectedSessionFile(filePath) {
+  if (!activeAnalysisSession?.id) {
+    throw new Error("No hay una sesión activa para analizar.");
+  }
+
+  const shortName = fileBaseName(filePath);
+  elements.analyzePathsBtn.disabled = true;
+  elements.analyzeUploadBtn.disabled = true;
+  showAnalysisProgress(`Preparando análisis de ${shortName}...`);
+  elements.resultTime.textContent = `Analizando ${shortName}...`;
+
+  try {
+    const data = await callApi("/api/analyze/session-file", {
+      method: "POST",
+      body: JSON.stringify({
+        sessionId: activeAnalysisSession.id,
+        filePath,
+      }),
+    });
+
+    const analysis = await waitForAnalysisJob(data.jobId);
+    updateAnalysisProgress(100, "Renderizando resultados...", "running");
+    await flushUi();
+    renderAnalysis(analysis, { collapseAll: false });
+  } finally {
+    elements.analyzePathsBtn.disabled = false;
+    elements.analyzeUploadBtn.disabled = false;
+  }
 }
 
 function renderAnalysis(analysis, options = {}) {
@@ -959,6 +1171,18 @@ function renderAnalysis(analysis, options = {}) {
         : options.maxFileGroups,
   };
   renderFindingsRows(analysis.findings, analysis.files || [], rowsOptions);
+  if (activeAnalysisSession) {
+    elements.groupedResults.insertAdjacentHTML(
+      "afterbegin",
+      `
+        <div class="session-analysis-actions">
+          <button id="backToCatalogBtn" type="button" class="btn btn-primary">
+            Seleccionar otro archivo
+          </button>
+        </div>
+      `,
+    );
+  }
   bindResultsInteractions();
 
   const missing = analysis.summary.missingPaths || [];
@@ -1028,6 +1252,31 @@ async function refreshKnowledge() {
   }
 }
 
+function handlePreparedSession(payload) {
+  const session = payload?.session || payload;
+  if (!session?.id || !Array.isArray(session.files)) {
+    throw new Error("No se pudo preparar la sesión de archivos.");
+  }
+
+  activeAnalysisSession = session;
+  catalogFilterText = "";
+  catalogVisibleRows = MAX_INITIAL_CATALOG_ROWS;
+  clearPreviewState();
+  renderSessionCards(session);
+  renderSessionCatalog(session, {
+    maxRows: MAX_INITIAL_CATALOG_ROWS,
+  });
+  bindSessionCatalogInteractions();
+
+  const missing = Array.isArray(session.missingPaths) ? session.missingPaths : [];
+  if (missing.length > 0) {
+    setKnowledgeStatus(
+      `Aviso: ${missing.length} rutas no existen y fueron omitidas.`,
+      "loading",
+    );
+  }
+}
+
 async function analyzePaths() {
   const paths = toPathRows(elements.pathsInput.value);
   if (!paths.length) {
@@ -1035,23 +1284,24 @@ async function analyzePaths() {
   }
 
   elements.analyzePathsBtn.disabled = true;
-  elements.resultTime.textContent = "Analizando rutas...";
-  showAnalysisProgress("Preparando análisis de rutas...");
+  elements.resultTime.textContent = "Preparando sesión de rutas...";
+  showAnalysisProgress("Preparando sesión de rutas...");
   try {
     const data = await callApi("/api/analyze/paths", {
       method: "POST",
       body: JSON.stringify({ paths }),
     });
-    if (data.analysis) {
-      updateAnalysisProgress(100, "Análisis completado.");
-      renderAnalysis(data.analysis, { collapseAll: false });
+    if (data.analysis?.session) {
+      updateAnalysisProgress(100, "Sesión preparada.");
+      handlePreparedSession(data.analysis);
       return;
     }
 
-    const analysis = await waitForAnalysisJob(data.jobId);
-    updateAnalysisProgress(100, "Renderizando resultados...", "running");
+    const payload = await waitForAnalysisJob(data.jobId);
+    updateAnalysisProgress(100, "Cargando listado de archivos...", "running");
     await flushUi();
-    renderAnalysis(analysis, { collapseAll: false });
+    handlePreparedSession(payload);
+    elements.resultTime.textContent = "Sesión preparada. Selecciona un archivo para analizar.";
   } finally {
     elements.analyzePathsBtn.disabled = false;
   }
@@ -1064,8 +1314,8 @@ async function analyzeUploads() {
   }
 
   elements.analyzeUploadBtn.disabled = true;
-  elements.resultTime.textContent = "Analizando selección...";
-  showAnalysisProgress("Preparando análisis de archivos seleccionados...");
+  elements.resultTime.textContent = "Preparando sesión de selección...";
+  showAnalysisProgress("Preparando sesión de archivos seleccionados...");
   try {
     const payload = [];
     for (const item of files) {
@@ -1082,16 +1332,17 @@ async function analyzeUploads() {
         files: payload,
       }),
     });
-    if (data.analysis) {
-      updateAnalysisProgress(100, "Análisis completado.");
-      renderAnalysis(data.analysis, { collapseAll: true });
+    if (data.analysis?.session) {
+      updateAnalysisProgress(100, "Sesión preparada.");
+      handlePreparedSession(data.analysis);
       return;
     }
 
-    const analysis = await waitForAnalysisJob(data.jobId);
-    updateAnalysisProgress(100, "Renderizando resultados...", "running");
+    const prepared = await waitForAnalysisJob(data.jobId);
+    updateAnalysisProgress(100, "Cargando listado de archivos...", "running");
     await flushUi();
-    renderAnalysis(analysis, { collapseAll: true });
+    handlePreparedSession(prepared);
+    elements.resultTime.textContent = "Sesión preparada. Selecciona un archivo para analizar.";
   } finally {
     elements.analyzeUploadBtn.disabled = false;
   }

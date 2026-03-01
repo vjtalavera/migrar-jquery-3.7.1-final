@@ -338,6 +338,82 @@ textarea:focus {
   max-width: 100%;
 }
 
+.session-catalog {
+  border: 1px solid #d8c7b2;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.session-catalog-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid #ecd9c2;
+  background: #fff8ef;
+}
+
+.session-catalog-filter {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #d8c7b2;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 0.8rem;
+  background: #fff;
+}
+
+.session-catalog-count {
+  font-size: 0.68rem;
+  color: #6d6357;
+  white-space: nowrap;
+}
+
+.session-catalog-list {
+  display: grid;
+  gap: 1px;
+  max-height: 40vh;
+  overflow: auto;
+  padding: 2px;
+}
+
+.session-file-item {
+  width: 100%;
+  border: 1px solid #f0e1cf;
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  padding: 6px 8px;
+  cursor: pointer;
+  display: grid;
+  gap: 2px;
+}
+
+.session-file-item:hover {
+  background: #fff7ee;
+  border-color: #e7cfae;
+}
+
+.session-file-name {
+  font-size: 0.74rem;
+  color: #3d352c;
+  font-weight: 700;
+}
+
+.session-file-path {
+  font-size: 0.66rem;
+  color: #6d6357;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.session-analysis-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
 .file-group {
   border: 1px solid #d8c7b2;
   border-radius: 10px;
@@ -619,11 +695,16 @@ th {
 code.localized-line {
   background: #fdecec;
   color: #b23a3a;
+  display: block;
+  font-size: 0.84rem;
+  line-height: 1.05rem;
 }
 
 code.corrected-line {
   background: #e9f8ee;
   color: #2e7d32;
+  font-size: 0.84rem;
+  line-height: 1.05rem;
 }
 
 .finding-line-jump {
@@ -795,9 +876,13 @@ code.corrected-line {
   padding-bottom: 6px;
 }
 
+.preview-row td.preview-main-col {
+  padding-right: 8px;
+}
+
 .inline-file-preview-table {
   width: 100%;
-  max-width: 50vw;
+  max-width: none;
   border: 1px solid #dfd1c0;
   border-radius: 8px;
   background: #fffaf3;
@@ -814,7 +899,7 @@ code.corrected-line {
 .inline-file-preview-body {
   margin: 0;
   padding: 6px;
-  border: 1px solid #e6dacb;
+  border: none;
   border-radius: 6px;
   background: #fff;
   font-family: "JetBrains Mono", monospace;
@@ -905,6 +990,6 @@ code.corrected-line {
 
   .inline-file-preview-table {
     width: 100%;
-    max-width: 50vw;
+    max-width: none;
   }
 }
