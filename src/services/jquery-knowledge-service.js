@@ -87,6 +87,26 @@ const MANUAL_SOLUTIONS = {
 
 const AMBIGUOUS_RULES = new Set(["load-shorthand", "toggle-event"]);
 const JQUERY_START_REGEX = /(?:\$jq|\$|jQuery)\s*(?:\(|\.)/;
+const SELECTOR_ARG_METHODS = new Set([
+  "add",
+  "addBack",
+  "children",
+  "closest",
+  "find",
+  "filter",
+  "has",
+  "next",
+  "nextAll",
+  "nextUntil",
+  "not",
+  "parent",
+  "parents",
+  "parentsUntil",
+  "prev",
+  "prevAll",
+  "prevUntil",
+  "siblings",
+]);
 const EXTRA_MIGRATION_RULES = [
   {
     title: ".ready() (syntaxis legacy deprecada)",
@@ -802,11 +822,11 @@ function getSelectorMatchesInJQueryCalls(line, token) {
     return matches;
   }
 
-  const callPattern = /(?:\$jq|\$|jQuery)\s*\(\s*(['"])((?:\\.|(?!\1).)*)\1\s*\)/g;
-  let callMatch;
   const escapedToken = escapeRegex(token);
   const tokenPattern = new RegExp(`:${escapedToken}(?:\\b|\\s*\\()`, "g");
 
+  const callPattern = /(?:\$jq|\$|jQuery)\s*\(\s*(['"])((?:\\.|(?!\1).)*)\1\s*\)/g;
+  let callMatch;
   while ((callMatch = callPattern.exec(text)) !== null) {
     const full = callMatch[0];
     const selector = callMatch[2] || "";
@@ -817,6 +837,43 @@ function getSelectorMatchesInJQueryCalls(line, token) {
     }
     const selectorStart = callMatch.index + quotePosInFull + 1;
 
+    let tokenMatch;
+    while ((tokenMatch = tokenPattern.exec(selector)) !== null) {
+      matches.push({
+        index: selectorStart + tokenMatch.index,
+        value: tokenMatch[0].trim(),
+      });
+    }
+  }
+
+  const methodArgPattern =
+    /\.\s*([A-Za-z_$][\w$]*)\s*\(\s*(['"])((?:\\.|(?!\2).)*)\2/g;
+  let methodMatch;
+  while ((methodMatch = methodArgPattern.exec(text)) !== null) {
+    const methodName = String(methodMatch[1] || "");
+    if (!SELECTOR_ARG_METHODS.has(methodName)) {
+      continue;
+    }
+
+    if (isInsideQuotedOrComment(text, methodMatch.index)) {
+      continue;
+    }
+
+    const left = text.slice(0, methodMatch.index);
+    if (!JQUERY_START_REGEX.test(left)) {
+      continue;
+    }
+
+    const full = methodMatch[0];
+    const selector = methodMatch[3] || "";
+    const quote = methodMatch[2];
+    const quotePosInFull = full.indexOf(quote);
+    if (quotePosInFull < 0) {
+      continue;
+    }
+    const selectorStart = methodMatch.index + quotePosInFull + 1;
+
+    tokenPattern.lastIndex = 0;
     let tokenMatch;
     while ((tokenMatch = tokenPattern.exec(selector)) !== null) {
       matches.push({

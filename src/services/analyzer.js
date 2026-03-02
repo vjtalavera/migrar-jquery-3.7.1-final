@@ -27,6 +27,26 @@ const DEFINITIVE_BY_SLUG = {
   "toggle-event":
     "Reemplaza `.toggle(fn1, fn2, ...)` por `.on(\"click\", handler)` con estado explícito.",
 };
+const SELECTOR_ARG_METHODS = new Set([
+  "add",
+  "addBack",
+  "children",
+  "closest",
+  "find",
+  "filter",
+  "has",
+  "next",
+  "nextAll",
+  "nextUntil",
+  "not",
+  "parent",
+  "parents",
+  "parentsUntil",
+  "prev",
+  "prevAll",
+  "prevUntil",
+  "siblings",
+]);
 
 function detectSeverity(entry) {
   if (entry.status.includes("removed")) {
@@ -599,7 +619,12 @@ function transformEqSelectorLine(line) {
     /((?:\$jq|\$|jQuery)\s*\(\s*)(['"])([^"'`]*?):eq\(\s*([^)]+?)\s*\)([^"'`]*)\2\s*\)/i;
   const match = line.match(pattern);
   if (!match) {
-    return null;
+    return transformSelectorInMethodArgLine(
+      line,
+      "eq",
+      (indexExpr) => `.eq(${indexExpr})`,
+      { mode: "indexed" },
+    );
   }
 
   const beforeCall = match[1];
@@ -734,6 +759,87 @@ function transformDeferredStateLine(line, oldMethod, expectedState) {
   return replaceCallRange(line, call, `.state() === "${expectedState}"`);
 }
 
+function transformSelectorInMethodArgLine(
+  line,
+  selectorToken,
+  buildSuffix,
+  options = {},
+) {
+  const mode = options.mode || "simple";
+  const text = String(line || "");
+  const methodArgPattern =
+    /\.\s*([A-Za-z_$][\w$]*)\s*\(\s*(['"])((?:\\.|(?!\2).)*)\2/g;
+  let methodMatch;
+
+  while ((methodMatch = methodArgPattern.exec(text)) !== null) {
+    const methodName = String(methodMatch[1] || "");
+    if (!SELECTOR_ARG_METHODS.has(methodName)) {
+      continue;
+    }
+
+    const selector = methodMatch[3] || "";
+    let normalizedSelector = selector;
+    let suffix = null;
+
+    if (mode === "indexed") {
+      const indexedPattern = new RegExp(
+        `:${escapeRegex(selectorToken)}\\(\\s*([^)]+?)\\s*\\)`,
+        "i",
+      );
+      const selectorMatch = selector.match(indexedPattern);
+      if (!selectorMatch) {
+        continue;
+      }
+
+      const indexExpr = String(selectorMatch[1] || "").trim();
+      if (!indexExpr) {
+        continue;
+      }
+      normalizedSelector = selector.replace(indexedPattern, "");
+      suffix = buildSuffix(indexExpr);
+    } else {
+      const simplePattern = new RegExp(`:${escapeRegex(selectorToken)}\\b`, "i");
+      if (!simplePattern.test(selector)) {
+        continue;
+      }
+      normalizedSelector = selector.replace(simplePattern, "");
+      suffix = buildSuffix();
+    }
+
+    normalizedSelector = normalizedSelector.replace(/\s{2,}/g, " ").trim();
+    if (!normalizedSelector) {
+      normalizedSelector = "*";
+    }
+
+    const start = methodMatch.index;
+    const openParen = text.indexOf("(", start);
+    if (openParen < 0) {
+      continue;
+    }
+    const closeParen = findMatchingParen(text, openParen);
+    if (closeParen < 0) {
+      continue;
+    }
+
+    const callText = text.slice(start, closeParen + 1);
+    const argReplacePattern =
+      /^(\.\s*[A-Za-z_$][\w$]*\s*\(\s*)(['"])((?:\\.|(?!\2).)*)\2/i;
+    if (!argReplacePattern.test(callText)) {
+      continue;
+    }
+
+    const quote = methodMatch[2];
+    const rewrittenCall = callText.replace(
+      argReplacePattern,
+      `$1${quote}${normalizedSelector}${quote}`,
+    );
+
+    return `${text.slice(0, start)}${rewrittenCall}${suffix}${text.slice(closeParen + 1)}`;
+  }
+
+  return null;
+}
+
 function transformSimpleSelectorLine(line, selectorToken, replacementMethod) {
   const pattern = new RegExp(
     `((?:\\$jq|\\$|jQuery)\\s*\\(\\s*)(['"])([^"'` +
@@ -745,13 +851,28 @@ function transformSimpleSelectorLine(line, selectorToken, replacementMethod) {
   );
   const match = line.match(pattern);
   if (!match) {
-    return null;
+    return transformSelectorInMethodArgLine(
+      line,
+      selectorToken,
+      () => `.${replacementMethod}()`,
+      { mode: "simple" },
+    );
   }
 
   const replacement =
     `${match[1]}${match[2]}${match[3]}${match[4]}${match[2]})` +
     `.${replacementMethod}()`;
-  return line.replace(pattern, replacement);
+  const transformedInConstructor = line.replace(pattern, replacement);
+  if (transformedInConstructor !== line) {
+    return transformedInConstructor;
+  }
+
+  return transformSelectorInMethodArgLine(
+    line,
+    selectorToken,
+    () => `.${replacementMethod}()`,
+    { mode: "simple" },
+  );
 }
 
 function transformSelectorWithIndexLine(line, selectorToken, replacementBuilder) {
@@ -765,7 +886,12 @@ function transformSelectorWithIndexLine(line, selectorToken, replacementBuilder)
   );
   const match = line.match(pattern);
   if (!match) {
-    return null;
+    return transformSelectorInMethodArgLine(
+      line,
+      selectorToken,
+      (value) => replacementBuilder(value),
+      { mode: "indexed" },
+    );
   }
 
   const indexExpr = String(match[4] || "").trim();
@@ -776,7 +902,17 @@ function transformSelectorWithIndexLine(line, selectorToken, replacementBuilder)
   const replacement =
     `${match[1]}${match[2]}${match[3]}${match[5]}${match[2]})` +
     replacementBuilder(indexExpr);
-  return line.replace(pattern, replacement);
+  const transformedInConstructor = line.replace(pattern, replacement);
+  if (transformedInConstructor !== line) {
+    return transformedInConstructor;
+  }
+
+  return transformSelectorInMethodArgLine(
+    line,
+    selectorToken,
+    (value) => replacementBuilder(value),
+    { mode: "indexed" },
+  );
 }
 
 function transformFirstSelectorLine(line) {

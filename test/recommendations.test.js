@@ -617,3 +617,45 @@ test("consolida multiples deprecados en una sola linea corregida final", () => {
     assert.equal(finding.recommendation, expected);
   }
 });
+
+test("corrige :first en selector de parents(...) en una sola linea", () => {
+  const knowledge = {
+    entries: [
+      {
+        title: ":first selector",
+        slug: "first-selector",
+        url: "https://api.jquery.com/first-selector/",
+        status: ["deprecated"],
+        deprecatedIn: "3.4",
+        removedIn: "4.0",
+        replacements: ["Quita :first del selector y filtra después con .first()."],
+        detection: {
+          kind: "selector",
+          token: "first",
+        },
+      },
+    ],
+  };
+
+  const sourceLine =
+    "var fc = $jq(\"#nombreForm\").parents('form:first').attr('name');";
+  const report = analyzeUploadedFiles(
+    [
+      {
+        path: "demo.js",
+        content: sourceLine,
+      },
+    ],
+    knowledge,
+  );
+
+  assert.equal(report.findings.length, 1);
+  assert.equal(
+    report.findings[0].correctedInstruction,
+    "var fc = $jq(\"#nombreForm\").parents('form').first().attr('name');",
+  );
+  assert.equal(
+    report.findings[0].recommendation,
+    "var fc = $jq(\"#nombreForm\").parents('form').first().attr('name');",
+  );
+});

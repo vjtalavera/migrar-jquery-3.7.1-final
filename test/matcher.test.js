@@ -147,3 +147,17 @@ test("no detecta selector deprecated fuera de llamada jQuery", () => {
   const matches = getLineMatchesForRule(line, rule);
   assert.equal(matches.length, 0);
 });
+
+test("detecta :first dentro de selector en argumento de metodo jQuery", () => {
+  const rule = {
+    slug: "first-selector",
+    detection: {
+      kind: "selector",
+      token: "first",
+    },
+  };
+
+  const line = 'var fc = $jq("#nombreForm").parents(\'form:first\').attr("name");';
+  const matches = getLineMatchesForRule(line, rule);
+  assert.equal(matches.length, 1);
+});
