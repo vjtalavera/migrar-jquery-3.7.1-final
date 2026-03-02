@@ -415,3 +415,205 @@ test("genera correccion para click shorthand sin argumentos a trigger", () => {
     '$jq("#txtLblCondicionada").trigger("click");',
   );
 });
+
+test("genera correccion directa para jQuery.trim sin repetir la instruccion detectada", () => {
+  const knowledge = {
+    entries: [
+      {
+        title: "jQuery.trim()",
+        slug: "jQuery.trim",
+        url: "https://api.jquery.com/jQuery.trim/",
+        status: ["deprecated", "removed"],
+        deprecatedIn: "3.5",
+        removedIn: "4.0",
+        replacements: [
+          "Reemplaza `jQuery.trim(valor)` por `String(valor).trim()`.",
+        ],
+        detection: {
+          kind: "globalMethod",
+          token: "trim",
+          pathParts: ["trim"],
+        },
+      },
+    ],
+  };
+
+  const sourceLine = "$jq.trim(nombre);";
+  const report = analyzeUploadedFiles(
+    [
+      {
+        path: "demo.js",
+        content: sourceLine,
+      },
+    ],
+    knowledge,
+  );
+
+  assert.equal(report.findings.length, 1);
+  assert.equal(report.findings[0].detectedInstruction, sourceLine);
+  assert.equal(report.findings[0].correctedInstruction, "String(nombre).trim();");
+  assert.notEqual(report.findings[0].recommendation, sourceLine);
+  assert.equal(report.findings[0].recommendation, "String(nombre).trim();");
+});
+
+test("genera correccion para delegate reordenando argumentos a on", () => {
+  const knowledge = {
+    entries: [
+      {
+        title: ".delegate()",
+        slug: "delegate",
+        url: "https://api.jquery.com/delegate/",
+        status: ["deprecated"],
+        deprecatedIn: "3.0",
+        removedIn: null,
+        replacements: [
+          "Reemplaza `.delegate(selector, events, handler)` por `.on(events, selector, handler)`.",
+        ],
+        detection: {
+          kind: "instanceMethod",
+          token: "delegate",
+        },
+      },
+    ],
+  };
+
+  const report = analyzeUploadedFiles(
+    [
+      {
+        path: "demo.js",
+        content: '$jq(document).delegate(".fila", "click", onClickFila);',
+      },
+    ],
+    knowledge,
+  );
+
+  assert.equal(report.findings.length, 1);
+  assert.equal(
+    report.findings[0].correctedInstruction,
+    '$jq(document).on("click", ".fila", onClickFila);',
+  );
+  assert.equal(
+    report.findings[0].recommendation,
+    '$jq(document).on("click", ".fila", onClickFila);',
+  );
+});
+
+test("genera correccion para selector :first a .first()", () => {
+  const knowledge = {
+    entries: [
+      {
+        title: ":first selector",
+        slug: "first-selector",
+        url: "https://api.jquery.com/first-selector/",
+        status: ["deprecated"],
+        deprecatedIn: "3.4",
+        removedIn: "4.0",
+        replacements: ["Quita :first del selector y filtra después con .first()."],
+        detection: {
+          kind: "selector",
+          token: "first",
+        },
+      },
+    ],
+  };
+
+  const report = analyzeUploadedFiles(
+    [
+      {
+        path: "demo.js",
+        content: '$jq("#tabla tr:first").addClass("x");',
+      },
+    ],
+    knowledge,
+  );
+
+  assert.equal(report.findings.length, 1);
+  assert.equal(
+    report.findings[0].correctedInstruction,
+    '$jq("#tabla tr").first().addClass("x");',
+  );
+  assert.equal(
+    report.findings[0].recommendation,
+    '$jq("#tabla tr").first().addClass("x");',
+  );
+});
+
+test("consolida multiples deprecados en una sola linea corregida final", () => {
+  const knowledge = {
+    entries: [
+      {
+        title: ".size()",
+        slug: "size",
+        url: "https://api.jquery.com/size/",
+        status: ["removed"],
+        deprecatedIn: "1.8",
+        removedIn: "3.0",
+        replacements: ["Reemplaza `.size()` por `.length`."],
+        detection: {
+          kind: "instanceMethod",
+          token: "size",
+        },
+      },
+      {
+        title: "jQuery.parseJSON()",
+        slug: "jQuery.parseJSON",
+        url: "https://api.jquery.com/jQuery.parseJSON/",
+        status: ["removed"],
+        deprecatedIn: "3.0",
+        removedIn: "4.0",
+        replacements: ["Reemplaza por JSON.parse()."],
+        detection: {
+          kind: "globalMethod",
+          token: "parseJSON",
+          pathParts: ["parseJSON"],
+        },
+      },
+      {
+        title: ":odd Selector",
+        slug: "odd-selector",
+        url: "https://api.jquery.com/odd-selector/",
+        status: ["deprecated"],
+        deprecatedIn: "3.4",
+        removedIn: "4.0",
+        replacements: ["Quita :odd y usa .odd()."],
+        detection: {
+          kind: "selector",
+          token: "odd",
+        },
+      },
+      {
+        title: ".click()",
+        slug: "click-shorthand",
+        url: "https://api.jquery.com/click-shorthand/",
+        status: ["deprecated"],
+        deprecatedIn: "3.3",
+        removedIn: null,
+        replacements: ['Usa `.on("click", handler)`'],
+        detection: {
+          kind: "instanceMethod",
+          token: "click",
+        },
+      },
+    ],
+  };
+
+  const sourceLine = "$('#x').size(); $.parseJSON(raw); $('li:odd').click(fn);";
+  const report = analyzeUploadedFiles(
+    [
+      {
+        path: "demo.js",
+        content: sourceLine,
+      },
+    ],
+    knowledge,
+  );
+
+  assert.equal(report.findings.length, 4);
+  const expected =
+    "$('#x').length; JSON.parse(raw); $('li').odd().on(\"click\", fn);";
+
+  for (const finding of report.findings) {
+    assert.equal(finding.correctedInstruction, expected);
+    assert.equal(finding.recommendation, expected);
+  }
+});

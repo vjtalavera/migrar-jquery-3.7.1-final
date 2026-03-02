@@ -118,3 +118,32 @@ test("detecta .context como propiedad de instancia jQuery", () => {
   const matches = getLineMatchesForRule(line, rule);
   assert.equal(matches.length, 1);
 });
+
+test("no detecta APIs dentro de literales de texto", () => {
+  const rule = {
+    slug: "jQuery.isFunction",
+    detection: {
+      kind: "globalMethod",
+      token: "isFunction",
+      pathParts: ["isFunction"],
+    },
+  };
+
+  const line = 'title: "jQuery.isFunction()",';
+  const matches = getLineMatchesForRule(line, rule);
+  assert.equal(matches.length, 0);
+});
+
+test("no detecta selector deprecated fuera de llamada jQuery", () => {
+  const rule = {
+    slug: "odd-selector",
+    detection: {
+      kind: "selector",
+      token: "odd",
+    },
+  };
+
+  const line = 'const cssRule = ":odd { color: red; }";';
+  const matches = getLineMatchesForRule(line, rule);
+  assert.equal(matches.length, 0);
+});

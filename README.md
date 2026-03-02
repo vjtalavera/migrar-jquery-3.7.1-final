@@ -7,6 +7,9 @@ Aplicación web profesional para detectar y corregir APIs **deprecated/removed**
 - Construye una base de conocimiento desde:
   - `https://api.jquery.com/category/deprecated/`
   - `https://api.jquery.com/category/removed/`
+- Descubre subcategorías de forma estricta desde:
+  - `li.cat-item a[href^="https://api.jquery.com/category/deprecated/"]`
+  - `li.cat-item a[href^="https://api.jquery.com/category/removed/"]`
 - Recorre URLs de entradas (`h1.entry-title a[href^="https://api.jquery.com/"]`) y extrae:
   - estado (`deprecated`, `removed`)
   - versiones (deprecado/removido en)
@@ -78,6 +81,7 @@ Internamente la API usa ejecución asíncrona por `jobId`:
 - `npm run build:knowledge`: precarga/actualiza base de conocimiento local.
   - `npm run build:knowledge -- --no-force` (usar cache si existe)
   - `npm run build:knowledge -- --web-fallback`
+  - genera también `data/jquery-deprecated-removed-report.md` con documentación tabular (API, estado, versión y solución)
 - `npm test`: pruebas del motor.
 
 ## Estructura

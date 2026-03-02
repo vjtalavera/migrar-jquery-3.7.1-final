@@ -9,7 +9,12 @@ const {
   loadFilesContent,
 } = require("../utils/fs-utils");
 const { getLineMatchesForRule } = require("./jquery-knowledge-service");
-const { normalizeWhitespace, truncate, decodeTextBuffer } = require("../utils/text");
+const {
+  normalizeWhitespace,
+  truncate,
+  decodeTextBuffer,
+  escapeRegex,
+} = require("../utils/text");
 
 const DEFINITIVE_BY_SLUG = {
   "ready-deprecated-syntax":
@@ -216,10 +221,10 @@ function transformShorthandLine(line, slug) {
 }
 
 function transformSizeLine(line) {
-  if (!/\.\s*size\s*\(\s*\)/i.test(line)) {
+  if (!/\.\s*size\s*\(/i.test(line)) {
     return null;
   }
-  return line.replace(/\.\s*size\s*\(\s*\)/i, ".length");
+  return line.replace(/\.\s*size\s*\([^)]*\)/i, ".length");
 }
 
 function transformParseJsonLine(line) {
@@ -347,6 +352,217 @@ function findFirstTopLevelComma(text) {
   return -1;
 }
 
+function findMatchingParen(text, openParenIndex) {
+  if (openParenIndex < 0 || text[openParenIndex] !== "(") {
+    return -1;
+  }
+
+  let quote = null;
+  let escaped = false;
+  let depth = 0;
+
+  for (let i = openParenIndex; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (quote) {
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+      continue;
+    }
+
+    if (char === "(") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return i;
+      }
+    }
+  }
+
+  return -1;
+}
+
+function splitTopLevelArguments(text) {
+  const input = String(text || "");
+  if (!input.trim()) {
+    return [];
+  }
+
+  const args = [];
+  let quote = null;
+  let escaped = false;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let start = 0;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (quote) {
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+      continue;
+    }
+
+    if (char === "(") {
+      parenDepth += 1;
+      continue;
+    }
+    if (char === ")") {
+      if (parenDepth > 0) {
+        parenDepth -= 1;
+      }
+      continue;
+    }
+    if (char === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+    if (char === "]") {
+      if (bracketDepth > 0) {
+        bracketDepth -= 1;
+      }
+      continue;
+    }
+    if (char === "{") {
+      braceDepth += 1;
+      continue;
+    }
+    if (char === "}") {
+      if (braceDepth > 0) {
+        braceDepth -= 1;
+      }
+      continue;
+    }
+
+    if (
+      char === "," &&
+      parenDepth === 0 &&
+      bracketDepth === 0 &&
+      braceDepth === 0
+    ) {
+      args.push(input.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+
+  args.push(input.slice(start).trim());
+  return args.filter((arg) => arg.length > 0);
+}
+
+function findCallRange(line, callRegex) {
+  const match = line.match(callRegex);
+  if (!match || typeof match.index !== "number") {
+    return null;
+  }
+
+  const start = match.index;
+  const openParen = start + match[0].lastIndexOf("(");
+  if (openParen < 0 || line[openParen] !== "(") {
+    return null;
+  }
+
+  const closeParen = findMatchingParen(line, openParen);
+  if (closeParen < 0) {
+    return null;
+  }
+
+  return {
+    start,
+    openParen,
+    closeParen,
+    argsText: line.slice(openParen + 1, closeParen),
+    match,
+  };
+}
+
+function parseInstanceCall(line, methodName) {
+  return findCallRange(
+    line,
+    new RegExp(`\\.\\s*${escapeRegex(methodName)}\\s*\\(`, "i"),
+  );
+}
+
+function parseGlobalCall(line, pathParts) {
+  const chain = pathParts
+    .map((part) => `\\s*\\.\\s*${escapeRegex(part)}`)
+    .join("");
+  const call = findCallRange(
+    line,
+    new RegExp(`(\\$jq|\\$|jQuery)${chain}\\s*\\(`, "i"),
+  );
+  if (!call) {
+    return null;
+  }
+
+  return {
+    ...call,
+    alias: call.match[1] || "jQuery",
+  };
+}
+
+function replaceCallRange(line, call, replacement) {
+  return `${line.slice(0, call.start)}${replacement}${line.slice(call.closeParen + 1)}`;
+}
+
+function isStringLiteral(text) {
+  return /^(['"`])[\s\S]*\1$/.test(String(text || "").trim());
+}
+
+function isLikelySelectorArgument(argExpression) {
+  const raw = String(argExpression || "").trim();
+  if (!raw) {
+    return false;
+  }
+
+  const unquoted = raw.replace(/^(['"`])([\s\S]*)\1$/, "$2");
+  const eventLike = /^[A-Za-z]+(?:\.[A-Za-z0-9_-]+)*(?:\s+[A-Za-z]+(?:\.[A-Za-z0-9_-]+)*)*$/;
+  if (eventLike.test(unquoted)) {
+    return false;
+  }
+
+  if (/^[#.\[:]/.test(unquoted)) {
+    return true;
+  }
+
+  return /[>+~\s]/.test(unquoted);
+}
+
 function transformLiveLine(line) {
   const liveCallMatch = line.match(
     /^(.*?)(\$jq|\$|jQuery)\s*\(\s*([^)]*?)\s*\)\s*\.\s*live\s*\(\s*([\s\S]*)$/i,
@@ -403,72 +619,525 @@ function transformEqSelectorLine(line) {
   return line.replace(pattern, replacement);
 }
 
+function transformMethodRenameLine(line, fromMethod, toMethod) {
+  const pattern = new RegExp(`\\.\\s*${escapeRegex(fromMethod)}\\s*\\(`, "i");
+  if (!pattern.test(line)) {
+    return null;
+  }
+  return line.replace(pattern, `.${toMethod}(`);
+}
+
+function transformAndSelfLine(line) {
+  return transformMethodRenameLine(line, "andSelf", "addBack");
+}
+
+function transformUnbindLine(line) {
+  return transformMethodRenameLine(line, "unbind", "off");
+}
+
+function transformUndelegateLine(line) {
+  const call = parseInstanceCall(line, "undelegate");
+  if (!call) {
+    return null;
+  }
+
+  const args = splitTopLevelArguments(call.argsText);
+  let rewrittenArgs = [];
+
+  if (args.length >= 2) {
+    rewrittenArgs = [args[1], args[0], ...args.slice(2)];
+  } else if (args.length === 1) {
+    if (isLikelySelectorArgument(args[0])) {
+      rewrittenArgs = ["undefined", args[0]];
+    } else {
+      rewrittenArgs = [args[0]];
+    }
+  }
+
+  const replacement =
+    rewrittenArgs.length > 0
+      ? `.off(${rewrittenArgs.join(", ")})`
+      : ".off()";
+  return replaceCallRange(line, call, replacement);
+}
+
+function transformDelegateLine(line) {
+  const call = parseInstanceCall(line, "delegate");
+  if (!call) {
+    return null;
+  }
+
+  const args = splitTopLevelArguments(call.argsText);
+  if (args.length < 2) {
+    return transformMethodRenameLine(line, "delegate", "on");
+  }
+
+  const rewrittenArgs = [args[1], args[0], ...args.slice(2)];
+  return replaceCallRange(line, call, `.on(${rewrittenArgs.join(", ")})`);
+}
+
+function transformHoverLine(line) {
+  const call = parseInstanceCall(line, "hover");
+  if (!call) {
+    return null;
+  }
+
+  const args = splitTopLevelArguments(call.argsText);
+  if (args.length === 0) {
+    return null;
+  }
+  if (args.length === 1) {
+    return replaceCallRange(
+      line,
+      call,
+      `.on("mouseenter mouseleave", ${args[0]})`,
+    );
+  }
+
+  return replaceCallRange(
+    line,
+    call,
+    `.on("mouseenter", ${args[0]}).on("mouseleave", ${args[1]})`,
+  );
+}
+
+function transformToggleEventLine(line) {
+  const call = parseInstanceCall(line, "toggle");
+  if (!call) {
+    return null;
+  }
+
+  const args = splitTopLevelArguments(call.argsText);
+  if (args.length < 2) {
+    return null;
+  }
+
+  const handlers = `[${args.join(", ")}]`;
+  const replacement =
+    `.on("click", (function(__handlers){ ` +
+    `let __i = 0; ` +
+    `return function(event){ ` +
+    `const __h = __handlers[__i % __handlers.length]; ` +
+    `__i += 1; ` +
+    `return __h.call(this, event); ` +
+    `}; ` +
+    `})(${handlers}))`;
+
+  return replaceCallRange(line, call, replacement);
+}
+
+function transformDeferredStateLine(line, oldMethod, expectedState) {
+  const call = parseInstanceCall(line, oldMethod);
+  if (!call) {
+    return null;
+  }
+  return replaceCallRange(line, call, `.state() === "${expectedState}"`);
+}
+
+function transformSimpleSelectorLine(line, selectorToken, replacementMethod) {
+  const pattern = new RegExp(
+    `((?:\\$jq|\\$|jQuery)\\s*\\(\\s*)(['"])([^"'` +
+      "`" +
+      `]*?):${escapeRegex(selectorToken)}([^"'` +
+      "`" +
+      `]*)\\2\\s*\\)`,
+    "i",
+  );
+  const match = line.match(pattern);
+  if (!match) {
+    return null;
+  }
+
+  const replacement =
+    `${match[1]}${match[2]}${match[3]}${match[4]}${match[2]})` +
+    `.${replacementMethod}()`;
+  return line.replace(pattern, replacement);
+}
+
+function transformSelectorWithIndexLine(line, selectorToken, replacementBuilder) {
+  const pattern = new RegExp(
+    `((?:\\$jq|\\$|jQuery)\\s*\\(\\s*)(['"])([^"'` +
+      "`" +
+      `]*?):${escapeRegex(selectorToken)}\\(\\s*([^)]+?)\\s*\\)([^"'` +
+      "`" +
+      `]*)\\2\\s*\\)`,
+    "i",
+  );
+  const match = line.match(pattern);
+  if (!match) {
+    return null;
+  }
+
+  const indexExpr = String(match[4] || "").trim();
+  if (!indexExpr) {
+    return null;
+  }
+
+  const replacement =
+    `${match[1]}${match[2]}${match[3]}${match[5]}${match[2]})` +
+    replacementBuilder(indexExpr);
+  return line.replace(pattern, replacement);
+}
+
+function transformFirstSelectorLine(line) {
+  return transformSimpleSelectorLine(line, "first", "first");
+}
+
+function transformLastSelectorLine(line) {
+  return transformSimpleSelectorLine(line, "last", "last");
+}
+
+function transformEvenSelectorLine(line) {
+  return transformSimpleSelectorLine(line, "even", "even");
+}
+
+function transformOddSelectorLine(line) {
+  return transformSimpleSelectorLine(line, "odd", "odd");
+}
+
+function transformGtSelectorLine(line) {
+  return transformSelectorWithIndexLine(
+    line,
+    "gt",
+    (indexExpr) => `.slice((${indexExpr}) + 1)`,
+  );
+}
+
+function transformLtSelectorLine(line) {
+  return transformSelectorWithIndexLine(
+    line,
+    "lt",
+    (indexExpr) => `.slice(0, ${indexExpr})`,
+  );
+}
+
+function transformGlobalMethodRewrite(line, pathParts, rewrite) {
+  const call = parseGlobalCall(line, pathParts);
+  if (!call) {
+    return null;
+  }
+
+  const args = splitTopLevelArguments(call.argsText);
+  const replacement = rewrite({
+    alias: call.alias,
+    args,
+    argsText: call.argsText,
+  });
+  if (!replacement) {
+    return null;
+  }
+
+  return replaceCallRange(line, call, replacement);
+}
+
+function transformJQueryIsArrayLine(line) {
+  return transformGlobalMethodRewrite(line, ["isArray"], ({ args }) => {
+    if (args.length === 0) {
+      return "Array.isArray()";
+    }
+    return `Array.isArray(${args[0]})`;
+  });
+}
+
+function transformJQueryIsNumericLine(line) {
+  return transformGlobalMethodRewrite(line, ["isNumeric"], ({ args }) => {
+    const valueExpr = args[0] || "value";
+    return `Number.isFinite(Number(${valueExpr}))`;
+  });
+}
+
+function transformJQueryIsWindowLine(line) {
+  return transformGlobalMethodRewrite(line, ["isWindow"], ({ args }) => {
+    const valueExpr = args[0] || "obj";
+    return `(${valueExpr}) != null && (${valueExpr}) === (${valueExpr}).window`;
+  });
+}
+
+function transformJQueryNowLine(line) {
+  return transformGlobalMethodRewrite(line, ["now"], () => "Date.now()");
+}
+
+function transformJQueryTrimLine(line) {
+  return transformGlobalMethodRewrite(line, ["trim"], ({ args }) => {
+    const valueExpr = args[0] || "value";
+    return `String(${valueExpr}).trim()`;
+  });
+}
+
+function transformJQueryTypeLine(line) {
+  return transformGlobalMethodRewrite(line, ["type"], ({ args }) => {
+    const valueExpr = args[0] || "value";
+    return `Object.prototype.toString.call(${valueExpr}).slice(8, -1).toLowerCase()`;
+  });
+}
+
+function transformJQueryUniqueLine(line) {
+  return transformGlobalMethodRewrite(line, ["unique"], ({ alias, args }) => {
+    const valueExpr = args[0] || "array";
+    return `${alias}.uniqueSort(${valueExpr})`;
+  });
+}
+
+function transformJQueryProxyLine(line) {
+  return transformGlobalMethodRewrite(line, ["proxy"], ({ args }) => {
+    if (args.length < 2) {
+      return null;
+    }
+
+    const restArgs = args.slice(2);
+    const withRest = restArgs.length > 0 ? `, ${restArgs.join(", ")}` : "";
+
+    if (isStringLiteral(args[1])) {
+      return `${args[0]}[${args[1]}].bind(${args[0]}${withRest})`;
+    }
+
+    return `${args[0]}.bind(${args[1]}${withRest})`;
+  });
+}
+
+function transformJQueryDeferredGetStackHookLine(line) {
+  return transformGlobalMethodRewrite(
+    line,
+    ["Deferred", "getStackHook"],
+    ({ alias, argsText }) => `${alias}.Deferred.getErrorHook(${argsText})`,
+  );
+}
+
+function transformGlobalPropertyLine(line, pathParts, replacement) {
+  const chain = pathParts
+    .map((part) => `\\s*\\.\\s*${escapeRegex(part)}`)
+    .join("");
+  const pattern = new RegExp(`(?:\\$jq|\\$|jQuery)${chain}\\b`, "i");
+  if (!pattern.test(line)) {
+    return null;
+  }
+  return line.replace(pattern, replacement);
+}
+
+function transformJQueryBoxModelLine(line) {
+  return transformGlobalPropertyLine(
+    line,
+    ["boxModel"],
+    '(document.compatMode === "CSS1Compat")',
+  );
+}
+
+function transformJQueryBrowserLine(line) {
+  const browserSpecific = line.match(
+    /(?:\$jq|\$|jQuery)\s*\.\s*browser\s*\.\s*([A-Za-z_$][\w$]*)\b/i,
+  );
+  if (browserSpecific) {
+    const browserName = browserSpecific[1].toLowerCase();
+    const map = {
+      msie: '/msie|trident/i.test(navigator.userAgent)',
+      mozilla:
+        '/mozilla/i.test(navigator.userAgent) && !/webkit|trident/i.test(navigator.userAgent)',
+      webkit: '/webkit/i.test(navigator.userAgent)',
+      opera: '/opera|opr/i.test(navigator.userAgent)',
+    };
+    const replacement = map[browserName] || "navigator.userAgent";
+    return line.replace(
+      /(?:\$jq|\$|jQuery)\s*\.\s*browser\s*\.\s*[A-Za-z_$][\w$]*\b/i,
+      replacement,
+    );
+  }
+
+  return transformGlobalPropertyLine(line, ["browser"], "navigator.userAgent");
+}
+
+function transformJQuerySupportLine(line) {
+  const supportSpecific = line.match(
+    /(?:\$jq|\$|jQuery)\s*\.\s*support\s*\.\s*([A-Za-z_$][\w$]*)\b/i,
+  );
+  if (supportSpecific) {
+    const feature = supportSpecific[1].toLowerCase();
+    const map = {
+      cors: '("withCredentials" in new XMLHttpRequest())',
+      ajax: '("XMLHttpRequest" in window)',
+      boxmodel: '(document.compatMode === "CSS1Compat")',
+      opacity:
+        '(typeof CSS !== "undefined" && CSS.supports ? CSS.supports("opacity", "0.5") : true)',
+    };
+    const replacement =
+      map[feature] ||
+      `(typeof CSS !== "undefined" && CSS.supports ? CSS.supports("${feature}") : false)`;
+    return line.replace(
+      /(?:\$jq|\$|jQuery)\s*\.\s*support\s*\.\s*[A-Za-z_$][\w$]*\b/i,
+      replacement,
+    );
+  }
+
+  return transformGlobalPropertyLine(
+    line,
+    ["support"],
+    '(typeof CSS !== "undefined" ? CSS.supports : undefined)',
+  );
+}
+
+function transformJQueryFxIntervalLine(line) {
+  const assignmentPattern =
+    /(?:\$jq|\$|jQuery)\s*\.\s*fx\s*\.\s*interval\s*=\s*[^;]+;?/i;
+  if (assignmentPattern.test(line)) {
+    return line.replace(
+      assignmentPattern,
+      "/* Removed jQuery.fx.interval assignment: no effect in modern jQuery */",
+    );
+  }
+
+  return transformGlobalPropertyLine(line, ["fx", "interval"], "0");
+}
+
+function transformJQueryHoldReadyLine(line) {
+  return transformGlobalMethodRewrite(line, ["holdReady"], ({ args }) => {
+    const arg = (args[0] || "").trim().toLowerCase();
+    if (arg === "false") {
+      return "window.__jqReadyGateResolve && window.__jqReadyGateResolve()";
+    }
+    if (arg === "true") {
+      return "window.__jqReadyGatePromise || (window.__jqReadyGatePromise = new Promise((resolve) => { window.__jqReadyGateResolve = resolve; }))";
+    }
+    return "window.__jqReadyGatePromise || Promise.resolve()";
+  });
+}
+
+function transformJQuerySubLine(line) {
+  return transformGlobalMethodRewrite(line, ["sub"], ({ alias }) => alias);
+}
+
+function transformSelectorPropertyLine(line) {
+  if (!/\.\s*selector\b/i.test(line)) {
+    return null;
+  }
+  return line.replace(/\.\s*selector\b/i, '.data("legacySelector")');
+}
+
 function buildCorrectedInstruction(rule, sourceLine) {
+  const slug = String(rule.slug || "");
   const transforms = [
+    () => (slug.endsWith("-shorthand") ? transformShorthandLine(sourceLine, slug) : null),
     () => {
-      if (rule.slug === "ready-deprecated-syntax") {
+      if (slug === "ready-deprecated-syntax") {
         return transformReadyLine(sourceLine);
       }
-      return null;
-    },
-    () => {
-      if (rule.slug === "attr-checked-legacy") {
+      if (slug === "attr-checked-legacy") {
         return transformAttrCheckedLine(sourceLine);
       }
-      return null;
-    },
-    () => transformShorthandLine(sourceLine, rule.slug),
-    () => {
-      if (rule.slug === "size") {
+      if (slug === "size") {
         return transformSizeLine(sourceLine);
       }
-      return null;
-    },
-    () => {
-      if (rule.slug === "jQuery.parseJSON") {
+      if (slug === "jQuery.parseJSON") {
         return transformParseJsonLine(sourceLine);
       }
-      return null;
-    },
-    () => {
-      if (rule.slug === "deferred.pipe") {
+      if (slug === "deferred.pipe") {
         return transformDeferredPipeLine(sourceLine);
       }
-      return null;
-    },
-    () => {
-      if (rule.slug === "die") {
+      if (slug === "deferred.isRejected") {
+        return transformDeferredStateLine(sourceLine, "isRejected", "rejected");
+      }
+      if (slug === "deferred.isResolved") {
+        return transformDeferredStateLine(sourceLine, "isResolved", "resolved");
+      }
+      if (slug === "die") {
         return transformDieLine(sourceLine);
       }
-      return null;
-    },
-    () => {
-      if (rule.slug === "jQuery.isFunction") {
+      if (slug === "jQuery.isFunction") {
         return transformIsFunctionLine(sourceLine);
       }
-      return null;
-    },
-    () => {
-      if (rule.slug === "bind") {
+      if (slug === "jQuery.isArray") {
+        return transformJQueryIsArrayLine(sourceLine);
+      }
+      if (slug === "jQuery.isNumeric") {
+        return transformJQueryIsNumericLine(sourceLine);
+      }
+      if (slug === "jQuery.isWindow") {
+        return transformJQueryIsWindowLine(sourceLine);
+      }
+      if (slug === "jQuery.now") {
+        return transformJQueryNowLine(sourceLine);
+      }
+      if (slug === "jQuery.trim") {
+        return transformJQueryTrimLine(sourceLine);
+      }
+      if (slug === "jQuery.type") {
+        return transformJQueryTypeLine(sourceLine);
+      }
+      if (slug === "jQuery.unique") {
+        return transformJQueryUniqueLine(sourceLine);
+      }
+      if (slug === "jQuery.proxy") {
+        return transformJQueryProxyLine(sourceLine);
+      }
+      if (slug === "jQuery.Deferred.getStackHook") {
+        return transformJQueryDeferredGetStackHookLine(sourceLine);
+      }
+      if (slug === "bind") {
         return transformBindLine(sourceLine);
       }
-      return null;
-    },
-    () => {
-      if (rule.slug === "context") {
+      if (slug === "andSelf") {
+        return transformAndSelfLine(sourceLine);
+      }
+      if (slug === "delegate") {
+        return transformDelegateLine(sourceLine);
+      }
+      if (slug === "unbind") {
+        return transformUnbindLine(sourceLine);
+      }
+      if (slug === "undelegate") {
+        return transformUndelegateLine(sourceLine);
+      }
+      if (slug === "hover") {
+        return transformHoverLine(sourceLine);
+      }
+      if (slug === "toggle-event") {
+        return transformToggleEventLine(sourceLine);
+      }
+      if (slug === "context") {
         return transformContextLine(sourceLine);
       }
-      return null;
-    },
-    () => {
-      if (rule.slug === "live") {
+      if (slug === "selector") {
+        return transformSelectorPropertyLine(sourceLine);
+      }
+      if (slug === "live") {
         return transformLiveLine(sourceLine);
       }
-      return null;
-    },
-    () => {
-      if (rule.slug === "eq-selector") {
+      if (slug === "eq-selector") {
         return transformEqSelectorLine(sourceLine);
+      }
+      if (slug === "first-selector") {
+        return transformFirstSelectorLine(sourceLine);
+      }
+      if (slug === "last-selector") {
+        return transformLastSelectorLine(sourceLine);
+      }
+      if (slug === "even-selector") {
+        return transformEvenSelectorLine(sourceLine);
+      }
+      if (slug === "odd-selector") {
+        return transformOddSelectorLine(sourceLine);
+      }
+      if (slug === "gt-selector") {
+        return transformGtSelectorLine(sourceLine);
+      }
+      if (slug === "lt-selector") {
+        return transformLtSelectorLine(sourceLine);
+      }
+      if (slug === "jQuery.boxModel") {
+        return transformJQueryBoxModelLine(sourceLine);
+      }
+      if (slug === "jQuery.browser") {
+        return transformJQueryBrowserLine(sourceLine);
+      }
+      if (slug === "jQuery.support") {
+        return transformJQuerySupportLine(sourceLine);
+      }
+      if (slug === "jQuery.fx.interval") {
+        return transformJQueryFxIntervalLine(sourceLine);
+      }
+      if (slug === "jQuery.holdReady") {
+        return transformJQueryHoldReadyLine(sourceLine);
+      }
+      if (slug === "jQuery.sub") {
+        return transformJQuerySubLine(sourceLine);
       }
       return null;
     },
@@ -484,14 +1153,51 @@ function buildCorrectedInstruction(rule, sourceLine) {
   return null;
 }
 
-function buildRecommendationWithInstruction(rule, sourceLine) {
+function buildFullyCorrectedLine(sourceLine, rules) {
+  let currentLine = sourceLine;
+  const seenLines = new Set([currentLine]);
+  const maxPasses = 8;
+
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    let changedInPass = false;
+
+    for (const rule of rules) {
+      const matches = getLineMatchesForRule(currentLine, rule);
+      if (matches.length === 0) {
+        continue;
+      }
+
+      const candidate = buildCorrectedInstruction(rule, currentLine);
+      if (!candidate || candidate === currentLine) {
+        continue;
+      }
+
+      currentLine = candidate;
+      changedInPass = true;
+
+      if (seenLines.has(currentLine)) {
+        return currentLine;
+      }
+      seenLines.add(currentLine);
+    }
+
+    if (!changedInPass) {
+      break;
+    }
+  }
+
+  return currentLine !== sourceLine ? currentLine : null;
+}
+
+function buildRecommendationWithInstruction(rule, sourceLine, lineWideCorrection = null) {
   const guidance = buildSuggestion(rule);
   const detectedInstruction = sourceLine;
   const correctedInstruction =
-    buildCorrectedInstruction(rule, sourceLine) || sourceLine;
+    lineWideCorrection || buildCorrectedInstruction(rule, sourceLine);
+  const recommendation = correctedInstruction || guidance;
 
   return {
-    recommendation: correctedInstruction,
+    recommendation,
     detectedInstruction,
     correctedInstruction,
     guidance,
@@ -508,10 +1214,16 @@ function analyzeTextByLines(filePath, content, rules) {
       continue;
     }
 
+    const lineWideCorrection = buildFullyCorrectedLine(line, rules);
+
     for (const rule of rules) {
       const matches = getLineMatchesForRule(line, rule);
       for (const match of matches) {
-        const correction = buildRecommendationWithInstruction(rule, line);
+        const correction = buildRecommendationWithInstruction(
+          rule,
+          line,
+          lineWideCorrection,
+        );
         findings.push({
           file: filePath,
           line: lineIndex + 1,

@@ -51,6 +51,8 @@ const MANUAL_SOLUTIONS = {
     "Reemplaza `jQuery.boxModel` por `document.compatMode === \"CSS1Compat\"`.",
   "jQuery.browser":
     "Reemplaza `jQuery.browser` por feature detection y APIs estándar del navegador.",
+  "jQuery.Deferred.getStackHook":
+    "Reemplaza `jQuery.Deferred.getStackHook()` por `jQuery.Deferred.getErrorHook()`.",
   "jQuery.support":
     "Reemplaza `jQuery.support` por comprobaciones directas de capacidades del navegador.",
   "jQuery.isArray": "Reemplaza `jQuery.isArray(value)` por `Array.isArray(value)`.",
@@ -182,13 +184,14 @@ function extractReplacementCandidates(textBlocks) {
   const suggestions = [];
 
   const patterns = [
+    /\bInstead of\s+.{3,220}?\buse\s+(.{5,260}?\brespectively)\b/i,
+    /\bInstead of\s+.{3,220}?\buse\s+(.{5,260}?)(?=\.(?:\s+[A-Z]|$))/i,
     /\bUse\s+(.{5,240}?)\s+instead\b/i,
-    /\busing\s+(.{5,240}?)\b/i,
+    /\b(?:superseded|replaced)\s+by\s+(.{5,240}?)(?:\.|$)/i,
     /\breplaced by\s+(.{5,240}?)(?:\.|$)/i,
-    /\bcheck if\s+(.{5,240}?)(?:\.|$)/i,
+    /\bthe native\s+([A-Za-z0-9_.]+(?:\(\))?\s+method)\b/i,
     /\breimplement it by yourself:\s*(function\s+isWindow\s*\([^)]*\)\s*\{[^}]+\})/i,
     /\bRemove it from your selectors and filter the results later using\s+(.{5,160}?)(?:\.|$)/i,
-    /\bit's better to\s+(.{5,220}?)(?:\.|$)/i,
   ];
 
   for (const block of textBlocks) {
@@ -200,7 +203,18 @@ function extractReplacementCandidates(textBlocks) {
     for (const pattern of patterns) {
       const match = normalized.match(pattern);
       if (match) {
-        const cleaned = normalizeWhitespace(match[1]).replace(/\s+\($/, "");
+        const cleaned = normalizeWhitespace(match[1])
+          .replace(/\s+\($/, "")
+          .replace(/[.,;:]+$/, "");
+        if (
+          cleaned.length < 10 ||
+          /\bor$/i.test(cleaned) ||
+          /^(the event|eventdata|the \.|a period|single|something|the plugin)$/i.test(
+            cleaned,
+          )
+        ) {
+          continue;
+        }
         suggestions.push(cleaned);
       }
     }
@@ -302,9 +316,30 @@ function buildKnowledgeIndex(entries) {
 }
 
 async function discoverCategoryPages(baseCategories, onProgress) {
-  const queue = [...baseCategories];
+  const queue = [];
   const visited = new Set();
   const entryUrlHints = new Map();
+
+  for (const baseCategory of baseCategories) {
+    onProgress?.({
+      stage: "discover-category-links",
+      message: `Descubriendo subcategorías desde ${baseCategory}`,
+    });
+
+    const html = await fetchText(baseCategory);
+    const $ = cheerio.load(html);
+
+    queue.push(baseCategory);
+
+    $("li.cat-item a[href]").each((_, element) => {
+      const href = $(element).attr("href");
+      const normalized = normalizeUrl(href, baseCategory);
+      if (!normalized || !normalized.startsWith(baseCategory)) {
+        return;
+      }
+      queue.push(normalized);
+    });
+  }
 
   while (queue.length > 0) {
     const categoryUrl = queue.shift();
@@ -572,6 +607,9 @@ function getLineMatchesForRule(line, rule) {
     const pattern = /(?:\$jq|\$|jQuery)\s*\([^)]*\)\s*\.\s*ready\s*\(/g;
     let match;
     while ((match = pattern.exec(line)) !== null) {
+      if (isInsideQuotedOrComment(line, match.index)) {
+        continue;
+      }
       matches.push({
         index: match.index,
         value: match[0].trim(),
@@ -585,6 +623,9 @@ function getLineMatchesForRule(line, rule) {
     );
     let match;
     while ((match = pattern.exec(line)) !== null) {
+      if (isInsideQuotedOrComment(line, match.index)) {
+        continue;
+      }
       const left = line.slice(0, match.index);
       if (!JQUERY_START_REGEX.test(left)) {
         continue;
@@ -603,6 +644,9 @@ function getLineMatchesForRule(line, rule) {
     const pattern = new RegExp(`\\.\\s*${escapeRegex(detection.token)}${suffix}`, "g");
     let match;
     while ((match = pattern.exec(line)) !== null) {
+      if (isInsideQuotedOrComment(line, match.index)) {
+        continue;
+      }
       const left = line.slice(0, match.index);
       if (!JQUERY_START_REGEX.test(left)) {
         continue;
@@ -641,6 +685,9 @@ function getLineMatchesForRule(line, rule) {
     const pattern = new RegExp(`(?:\\$jq|\\$|jQuery)${joinedPath}${suffix}`, "g");
     let match;
     while ((match = pattern.exec(line)) !== null) {
+      if (isInsideQuotedOrComment(line, match.index)) {
+        continue;
+      }
       matches.push({
         index: match.index,
         value: match[0].trim(),
@@ -650,12 +697,131 @@ function getLineMatchesForRule(line, rule) {
     if (!JQUERY_START_REGEX.test(line)) {
       return matches;
     }
-    const pattern = new RegExp(`:${escapeRegex(detection.token)}(?:\\b|\\s*\\()`, "g");
-    let match;
-    while ((match = pattern.exec(line)) !== null) {
+    const selectorMatches = getSelectorMatchesInJQueryCalls(line, detection.token);
+    for (const match of selectorMatches) {
       matches.push({
         index: match.index,
-        value: match[0].trim(),
+        value: match.value,
+      });
+    }
+  }
+
+  return matches;
+}
+
+function isInsideQuotedOrComment(line, targetIndex) {
+  const text = String(line || "");
+  if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= text.length) {
+    return false;
+  }
+
+  let quote = null;
+  let escaped = false;
+  let blockComment = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (blockComment) {
+      if (char === "*" && next === "/") {
+        blockComment = false;
+        if (i >= targetIndex) {
+          return true;
+        }
+        i += 1;
+      }
+      if (i === targetIndex) {
+        return true;
+      }
+      continue;
+    }
+
+    if (escaped) {
+      escaped = false;
+      if (i === targetIndex && quote) {
+        return true;
+      }
+      continue;
+    }
+
+    if (quote) {
+      if (char === "\\") {
+        escaped = true;
+        if (i === targetIndex) {
+          return true;
+        }
+        continue;
+      }
+      if (char === quote) {
+        if (i === targetIndex) {
+          return true;
+        }
+        quote = null;
+        continue;
+      }
+      if (i === targetIndex) {
+        return true;
+      }
+      continue;
+    }
+
+    if (char === "/" && next === "/") {
+      return targetIndex >= i;
+    }
+
+    if (char === "/" && next === "*") {
+      if (targetIndex === i || targetIndex === i + 1) {
+        return true;
+      }
+      blockComment = true;
+      i += 1;
+      continue;
+    }
+
+    if (char === "'" || char === '"' || char === "`") {
+      if (targetIndex === i) {
+        return true;
+      }
+      quote = char;
+      continue;
+    }
+
+    if (i === targetIndex) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+function getSelectorMatchesInJQueryCalls(line, token) {
+  const matches = [];
+  const text = String(line || "");
+  if (!text || !token) {
+    return matches;
+  }
+
+  const callPattern = /(?:\$jq|\$|jQuery)\s*\(\s*(['"])((?:\\.|(?!\1).)*)\1\s*\)/g;
+  let callMatch;
+  const escapedToken = escapeRegex(token);
+  const tokenPattern = new RegExp(`:${escapedToken}(?:\\b|\\s*\\()`, "g");
+
+  while ((callMatch = callPattern.exec(text)) !== null) {
+    const full = callMatch[0];
+    const selector = callMatch[2] || "";
+    const quote = callMatch[1];
+    const quotePosInFull = full.indexOf(quote);
+    if (quotePosInFull < 0) {
+      continue;
+    }
+    const selectorStart = callMatch.index + quotePosInFull + 1;
+
+    let tokenMatch;
+    while ((tokenMatch = tokenPattern.exec(selector)) !== null) {
+      matches.push({
+        index: selectorStart + tokenMatch.index,
+        value: tokenMatch[0].trim(),
       });
     }
   }
