@@ -1,6 +1,6 @@
 # Reporte jQuery Deprecated/Removed
 
-Generado: 2026-03-02T08:15:08.879Z
+Generado: 2026-03-02T14:41:35.391Z
 
 Fuentes de categoria rastreadas:
 - https://api.jquery.com/category/deprecated/
@@ -19,12 +19,12 @@ Fuentes de categoria rastreadas:
 
 | API | Estado | Deprecated In | Removed In | Solucion recomendada | URL |
 |---|---|---|---|---|---|
-| .ajaxComplete() | deprecated | 3.5 |  | .on( "ajaxComplete", handler ) | https://api.jquery.com/ajaxComplete-shorthand/ |
-| .ajaxError() | deprecated | 3.5 |  | .on( "ajaxError", handler ) | https://api.jquery.com/ajaxError-shorthand/ |
-| .ajaxSend() | deprecated | 3.5 |  | .on( "ajaxSend", handler ) | https://api.jquery.com/ajaxSend-shorthand/ |
-| .ajaxStart() | deprecated | 3.5 |  | .on( "ajaxStart", handler ) | https://api.jquery.com/ajaxStart-shorthand/ |
-| .ajaxStop() | deprecated | 3.5 |  | .on( "ajaxStop", handler ) | https://api.jquery.com/ajaxStop-shorthand/ |
-| .ajaxSuccess() | deprecated | 3.5 |  | .on( "ajaxSuccess", handler ) | https://api.jquery.com/ajaxSuccess-shorthand/ |
+| .ajaxComplete() | deprecated | 3.5 |  | Usa `.on( "ajaxComplete", handler )` | https://api.jquery.com/ajaxComplete-shorthand/ |
+| .ajaxError() | deprecated | 3.5 |  | Usa `.on( "ajaxError", handler )` | https://api.jquery.com/ajaxError-shorthand/ |
+| .ajaxSend() | deprecated | 3.5 |  | Usa `.on( "ajaxSend", handler )` | https://api.jquery.com/ajaxSend-shorthand/ |
+| .ajaxStart() | deprecated | 3.5 |  | Usa `.on( "ajaxStart", handler )` | https://api.jquery.com/ajaxStart-shorthand/ |
+| .ajaxStop() | deprecated | 3.5 |  | Usa `.on( "ajaxStop", handler )` | https://api.jquery.com/ajaxStop-shorthand/ |
+| .ajaxSuccess() | deprecated | 3.5 |  | Usa `.on( "ajaxSuccess", handler )` | https://api.jquery.com/ajaxSuccess-shorthand/ |
 | .andSelf() | deprecated, removed | 1.8 | 3.0 | Reemplaza `.andSelf()` por `.addBack()`. | https://api.jquery.com/andSelf/ |
 | .attr("checked", value) para estado dinámico | deprecated | 1.6+ (usar .prop para booleanos) |  | Reemplaza `.attr('checked', valor)` por `.prop('checked', valor)` para reflejar el estado actual. | https://api.jquery.com/prop/ |
 | .bind() | deprecated | 3.0 |  | Reemplaza `.bind()` por `.on()`. | https://api.jquery.com/bind/ |
@@ -81,6 +81,7 @@ Fuentes de categoria rastreadas:
 | .mouseup() | deprecated | 3.3 |  | .on( "mouseup", handler ) or .on( "mouseup", eventData, handler ), respectively | https://api.jquery.com/mouseup-shorthand/ |
 | :odd Selector | deprecated | 3.4 |  | Quita `:odd` del selector y filtra después con `.odd()`. | https://api.jquery.com/odd-selector/ |
 | .ready() (syntaxis legacy deprecada) | deprecated | 3.0 |  | Reemplaza `$(document).ready(handler)` y variantes (`$jq(...).ready(handler)`, `$().ready(handler)`) por `$(handler)`. | https://api.jquery.com/ready/ |
+| .removeAttr("disabled") para estado dinámico | deprecated | recomendación de API (usar .prop) |  | Reemplaza `.removeAttr('disabled')` por `.prop('disabled', false)` para estado dinámico. | https://api.jquery.com/removeAttr/ |
 | .resize() | deprecated | 3.3 |  | .on( "resize", handler ) or .on( "resize", eventData, handler ), respectively | https://api.jquery.com/resize-shorthand/ |
 | .scroll() | deprecated | 3.3 |  | .on( "scroll", handler ) or .on( "scroll", eventData, handler ), respectively | https://api.jquery.com/scroll-shorthand/ |
 | .select() | deprecated | 3.3 |  | .on( "select", handler ) or .on( "select", eventData, handler ), respectively | https://api.jquery.com/select-shorthand/ |

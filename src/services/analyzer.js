@@ -21,6 +21,8 @@ const DEFINITIVE_BY_SLUG = {
     "Usa solo `$(handler)` para DOM Ready. Ejemplo: `$(function () { ... });`.",
   "attr-checked-legacy":
     "Reemplaza `.attr('checked', valor)` por `.prop('checked', valor)`.",
+  "removeattr-disabled-legacy":
+    "Reemplaza `.removeAttr('disabled')` por `.prop('disabled', false)`.",
   context:
     "Reemplaza `.context` por acceso explícito al documento o elemento nativo según el caso.",
   live: "Reemplaza `.live(evento, handler)` por delegación con `$(document).on(evento, selector, handler)`.",
@@ -219,6 +221,16 @@ function transformAttrCheckedLine(line) {
   return line.replace(
     /(\.\s*)attr(\s*\(\s*(['"])checked\3\s*,)/i,
     "$1prop$2",
+  );
+}
+
+function transformRemoveAttrDisabledLine(line) {
+  if (!/\.\s*removeAttr\s*\(\s*(['"])disabled\1\s*\)/i.test(line)) {
+    return null;
+  }
+  return line.replace(
+    /(\.\s*)removeAttr(\s*\(\s*(['"])disabled\3\s*\))/i,
+    "$1prop('disabled', false)",
   );
 }
 
@@ -1157,6 +1169,9 @@ function buildCorrectedInstruction(rule, sourceLine) {
       }
       if (slug === "attr-checked-legacy") {
         return transformAttrCheckedLine(sourceLine);
+      }
+      if (slug === "removeattr-disabled-legacy") {
+        return transformRemoveAttrDisabledLine(sourceLine);
       }
       if (slug === "size") {
         return transformSizeLine(sourceLine);

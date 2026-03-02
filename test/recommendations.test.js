@@ -96,6 +96,46 @@ test("genera correccion definitiva para ready y attr checked", () => {
   );
 });
 
+test("genera correccion definitiva para removeAttr disabled", () => {
+  const knowledge = {
+    entries: [
+      {
+        title: '.removeAttr("disabled") para estado dinámico',
+        slug: "removeattr-disabled-legacy",
+        url: "https://api.jquery.com/removeAttr/",
+        status: ["deprecated"],
+        deprecatedIn: "recomendación de API",
+        removedIn: null,
+        replacements: ["texto ambiguo"],
+        detection: {
+          kind: "legacyBooleanAttrRemover",
+          token: "disabled",
+        },
+      },
+    ],
+  };
+
+  const report = analyzeUploadedFiles(
+    [
+      {
+        path: "demo.js",
+        content: "$jq('#divFecha').removeAttr('disabled');",
+      },
+    ],
+    knowledge,
+  );
+
+  assert.equal(report.findings.length, 1);
+  assert.equal(
+    report.findings[0].correctedInstruction,
+    "$jq('#divFecha').prop('disabled', false);",
+  );
+  assert.equal(
+    report.findings[0].recommendation,
+    "$jq('#divFecha').prop('disabled', false);",
+  );
+});
+
 test("genera correccion para deferred.pipe, die e isFunction", () => {
   const knowledge = {
     entries: [

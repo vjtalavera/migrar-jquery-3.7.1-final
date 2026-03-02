@@ -105,6 +105,29 @@ test("detecta attr('checked', valor) en cadena jQuery", () => {
   assert.equal(noMatches.length, 0);
 });
 
+test("detecta removeAttr('disabled') en cadena jQuery", () => {
+  const rule = {
+    slug: "removeattr-disabled-legacy",
+    detection: {
+      kind: "legacyBooleanAttrRemover",
+      token: "disabled",
+    },
+  };
+
+  const detectedLines = [
+    "$jq('#divFecha').removeAttr('disabled');",
+    "$('#divFecha').removeAttr(\"disabled\");",
+  ];
+  for (const line of detectedLines) {
+    const matches = getLineMatchesForRule(line, rule);
+    assert.equal(matches.length, 1, `Se esperaba detección para: ${line}`);
+  }
+
+  const nonJqueryLine = "control.removeAttr('disabled');";
+  const noMatches = getLineMatchesForRule(nonJqueryLine, rule);
+  assert.equal(noMatches.length, 0);
+});
+
 test("detecta .context como propiedad de instancia jQuery", () => {
   const rule = {
     slug: "context",

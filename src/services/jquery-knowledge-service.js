@@ -145,6 +145,25 @@ const EXTRA_MIGRATION_RULES = [
       token: "checked",
     },
   },
+  {
+    title: ".removeAttr(\"disabled\") para estado dinámico",
+    slug: "removeattr-disabled-legacy",
+    url: "https://api.jquery.com/removeAttr/",
+    status: ["deprecated"],
+    deprecatedIn: "recomendación de API (usar .prop)",
+    removedIn: null,
+    replacements: [
+      "Reemplaza `.removeAttr('disabled')` por `.prop('disabled', false)` para estado dinámico.",
+    ],
+    signatures: [".removeAttr( attributeName )", ".prop( \"disabled\", false )"],
+    notes:
+      "To avoid potential problems, use .prop() for dynamic boolean state updates instead of attribute removal.",
+    webFallback: null,
+    detection: {
+      kind: "legacyBooleanAttrRemover",
+      token: "disabled",
+    },
+  },
 ];
 
 let inMemoryKnowledge = null;
@@ -203,15 +222,114 @@ function extractVersions(rawText) {
 function extractReplacementCandidates(textBlocks) {
   const suggestions = [];
 
+  const cleanCandidate = (value) =>
+    normalizeWhitespace(value)
+      .replace(/\s+\($/, "")
+      .replace(/[.,;:]+$/, "");
+
+  const looksLikeApiExpression = (value) =>
+    /(?:\.[A-Za-z_$][\w$]*\s*(?:\(\))?|[A-Za-z_$][\w$]*\s*\(\)|[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*\s*\(\)|JSON\.parse|Array\.isArray|Date\.now)/.test(
+      String(value || ""),
+    );
+
+  const isLowQualityCandidate = (value) =>
+    (value.length < 10 && !looksLikeApiExpression(value)) ||
+    /\bor$/i.test(value) ||
+    /^(the event|eventdata|the \.|a period|single|something|the plugin)$/i.test(
+      value,
+    );
+
   const patterns = [
-    /\bInstead of\s+.{3,220}?\buse\s+(.{5,260}?\brespectively)\b/i,
-    /\bInstead of\s+.{3,220}?\buse\s+(.{5,260}?)(?=\.(?:\s+[A-Z]|$))/i,
-    /\bUse\s+(.{5,240}?)\s+instead\b/i,
-    /\b(?:superseded|replaced)\s+by\s+(.{5,240}?)(?:\.|$)/i,
-    /\breplaced by\s+(.{5,240}?)(?:\.|$)/i,
-    /\bthe native\s+([A-Za-z0-9_.]+(?:\(\))?\s+method)\b/i,
-    /\breimplement it by yourself:\s*(function\s+isWindow\s*\([^)]*\)\s*\{[^}]+\})/i,
-    /\bRemove it from your selectors and filter the results later using\s+(.{5,160}?)(?:\.|$)/i,
+    {
+      regex:
+        /\b(?:To avoid potential issues|To avoid possible issues)\s*,?\s*use\s+(.{3,260}?)\s+instead of\s+(.{3,260}?)(?=\.(?:\s+[A-Z]|$)|$)/i,
+      map: (match) => {
+        const replacement = cleanCandidate(match[1] || "");
+        const deprecated = cleanCandidate(match[2] || "");
+        return `Reemplaza \`${deprecated}\` por \`${replacement}\``;
+      },
+    },
+    {
+      regex:
+        /\b(?:To avoid potential problems|To avoid potential issues|To avoid possible problems|To avoid possible issues)\s*,?\s*use\s+(.{3,260}?)\s+instead(?::|\.|$)/i,
+      map: (match) => {
+        const replacement = cleanCandidate(match[1] || "");
+        return `Usa \`${replacement}\``;
+      },
+    },
+    {
+      regex:
+        /\bPara evitar posibles problemas,\s*utilice\s+(.{3,260}?)\s+en lugar de\s+(.{3,260}?)(?=\.(?:\s+[A-ZÁÉÍÓÚÑ]|$)|$)/i,
+      map: (match) => {
+        const replacement = cleanCandidate(match[1] || "");
+        const deprecated = cleanCandidate(match[2] || "");
+        return `Reemplaza \`${deprecated}\` por \`${replacement}\``;
+      },
+    },
+    {
+      regex: /\bUse\s+(.{3,260}?)\s+instead of\s+(.{3,260}?)(?=\.(?:\s+[A-Z]|$)|$)/i,
+      map: (match) => {
+        const replacement = cleanCandidate(match[1] || "");
+        const deprecated = cleanCandidate(match[2] || "");
+        return `Reemplaza \`${deprecated}\` por \`${replacement}\``;
+      },
+    },
+    {
+      regex: /\b(?:please\s+)?use\s+(.{2,260}?)\s+instead(?::|\.|$)/i,
+      map: (match) => {
+        const replacement = cleanCandidate(match[1] || "");
+        return `Usa \`${replacement}\``;
+      },
+    },
+    {
+      regex:
+        /\b([A-Za-z0-9_.$]+\(\)|[A-Za-z0-9_.$]+)\s+method[^.]{0,160}\bshould be used instead\b/i,
+      map: (match) => {
+        const replacement = cleanCandidate(match[1] || "");
+        return `Usa \`${replacement}\``;
+      },
+    },
+    {
+      regex: /\bcheck if\s+(.{5,240}?)\s+instead\b/i,
+      group: 1,
+    },
+    {
+      regex: /\bInstead of\s+.{3,220}?\buse\s+(.{5,260}?\brespectively)\b/i,
+      group: 1,
+    },
+    {
+      regex: /\bInstead of\s+.{3,220}?\buse\s+(.{5,260}?)(?=\.(?:\s+[A-Z]|$))/i,
+      group: 1,
+    },
+    {
+      regex: /\bUse\s+(.{5,240}?)\s+instead\b/i,
+      group: 1,
+    },
+    {
+      regex: /\b(?:superseded|replaced)\s+by\s+(.{5,240}?)(?:\.|$)/i,
+      group: 1,
+    },
+    {
+      regex: /\breplaced by\s+(.{5,240}?)(?:\.|$)/i,
+      group: 1,
+    },
+    {
+      regex: /\bthe native\s+([A-Za-z0-9_.]+(?:\(\))?\s+method)\b/i,
+      group: 1,
+    },
+    {
+      regex: /\breimplement it by yourself:\s*(function\s+isWindow\s*\([^)]*\)\s*\{[^}]+\})/i,
+      group: 1,
+    },
+    {
+      regex:
+        /\bRemove it from your selectors and filter the results later using\s+(.{5,160}?)(?:\.|$)/i,
+      group: 1,
+    },
+    {
+      regex: /\bit's better to\s+(.{5,220}?)(?:\.|$)/i,
+      group: 1,
+    },
   ];
 
   for (const block of textBlocks) {
@@ -220,22 +338,29 @@ function extractReplacementCandidates(textBlocks) {
       continue;
     }
 
-    for (const pattern of patterns) {
-      const match = normalized.match(pattern);
-      if (match) {
-        const cleaned = normalizeWhitespace(match[1])
-          .replace(/\s+\($/, "")
-          .replace(/[.,;:]+$/, "");
-        if (
-          cleaned.length < 10 ||
-          /\bor$/i.test(cleaned) ||
-          /^(the event|eventdata|the \.|a period|single|something|the plugin)$/i.test(
-            cleaned,
-          )
-        ) {
+    for (const patternSpec of patterns) {
+      const flags = patternSpec.regex.flags.includes("g")
+        ? patternSpec.regex.flags
+        : `${patternSpec.regex.flags}g`;
+      const matcher = new RegExp(patternSpec.regex.source, flags);
+      let match;
+
+      while ((match = matcher.exec(normalized)) !== null) {
+        const rawCandidate = patternSpec.map
+          ? patternSpec.map(match)
+          : match[patternSpec.group || 1];
+        const cleaned = cleanCandidate(rawCandidate || "");
+        if (!cleaned || isLowQualityCandidate(cleaned)) {
+          if (match[0].length === 0) {
+            break;
+          }
           continue;
         }
         suggestions.push(cleaned);
+
+        if (match[0].length === 0) {
+          break;
+        }
       }
     }
   }
@@ -656,6 +781,28 @@ function getLineMatchesForRule(line, rule) {
         value: match[0].trim(),
       });
     }
+  } else if (detection.kind === "legacyBooleanAttrRemover") {
+    const token = detection.token || "disabled";
+    const pattern = new RegExp(
+      `\\.\\s*removeAttr\\s*\\(\\s*(['"])${escapeRegex(token)}\\1\\s*\\)`,
+      "gi",
+    );
+    let match;
+    while ((match = pattern.exec(line)) !== null) {
+      if (isInsideQuotedOrComment(line, match.index)) {
+        continue;
+      }
+
+      const left = line.slice(0, match.index);
+      if (!JQUERY_START_REGEX.test(left)) {
+        continue;
+      }
+
+      matches.push({
+        index: match.index,
+        value: match[0].trim(),
+      });
+    }
   } else if (
     detection.kind === "instanceMethod" ||
     detection.kind === "instanceProperty"
@@ -890,4 +1037,7 @@ module.exports = {
   ensureKnowledge,
   getKnowledgeSummary,
   getLineMatchesForRule,
+  __testables: {
+    extractReplacementCandidates,
+  },
 };
