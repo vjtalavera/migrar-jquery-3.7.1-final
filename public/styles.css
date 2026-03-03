@@ -523,6 +523,14 @@ textarea:focus {
   overflow-wrap: anywhere;
 }
 
+.session-file-meta {
+  display: inline;
+  font-size: 0.64rem;
+  color: #5a6f86;
+  margin-left: 6px;
+  padding: 0;
+}
+
 .session-analysis-actions {
   display: flex;
   justify-content: flex-end;
@@ -545,7 +553,8 @@ textarea:focus {
 
 .file-group > summary {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 8px 10px;
   cursor: pointer;
@@ -561,15 +570,27 @@ textarea:focus {
 .file-summary-main {
   flex: 1;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .file-summary-main code {
+  display: inline;
+  white-space: normal;
+  overflow-wrap: anywhere;
   background: #ffffff;
   border: 1px solid #dde6f0;
   color: #304761;
+}
+
+.file-summary-updated {
+  display: inline;
+  margin-top: 0;
+  font-size: 0.64rem;
+  color: #5a6f86;
+  white-space: nowrap;
 }
 
 .file-chip {

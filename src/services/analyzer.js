@@ -1418,6 +1418,17 @@ function dedupeFindings(findings) {
   return Array.from(map.values());
 }
 
+function normalizeLastModified(value) {
+  if (value == null || value === "") {
+    return "";
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toISOString();
+}
+
 function summarize(files, findings, missingPaths = []) {
   const bySeverity = {
     removed: findings.filter((item) => item.severity === "removed").length,
@@ -1518,6 +1529,7 @@ function analyzeSources(inputFiles, knowledge, options = {}) {
       extension: path.extname(file.path).toLowerCase(),
       includeReferences: extractIncludedReferences(file.content),
       sourceType,
+      lastModified: normalizeLastModified(file.lastModified),
     })),
     findings: dedupedFindings,
   };
@@ -1589,6 +1601,7 @@ function analyzeUploadedFiles(uploadFiles, knowledge, options = {}) {
         typeof item.contentBase64 === "string" && item.contentBase64.length > 0
           ? decodeTextBuffer(Buffer.from(item.contentBase64, "base64"))
           : String(item.content || ""),
+      lastModified: normalizeLastModified(item.lastModified),
     });
 
     if (onProgress) {
@@ -1640,6 +1653,7 @@ function analyzeProvidedSources(files, knowledge, options = {}) {
         .map((item) => ({
           path: item.path,
           content: String(item.content || ""),
+          lastModified: normalizeLastModified(item.lastModified),
         }))
     : [];
 

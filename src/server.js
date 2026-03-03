@@ -38,6 +38,17 @@ function normalizeIncludeReferences(references) {
     .filter((item) => item.value.length > 0);
 }
 
+function normalizeLastModified(value) {
+  if (value == null || value === "") {
+    return "";
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toISOString();
+}
+
 function compactAnalysisForUi(analysis) {
   if (!analysis || typeof analysis !== "object") {
     return analysis;
@@ -67,6 +78,7 @@ function compactAnalysisForUi(analysis) {
       path: String(file?.path || ""),
       sourceType: String(file?.sourceType || "path"),
       includeReferences: normalizeIncludeReferences(file?.includeReferences),
+      lastModified: normalizeLastModified(file?.lastModified),
     }))
     : [];
 
@@ -156,6 +168,33 @@ function buildFileLookup(files) {
   };
 }
 
+async function enrichPathEntriesWithLastModified(filePaths) {
+  const normalizedPaths = Array.from(
+    new Set(
+      (filePaths || [])
+        .map((item) => String(item || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  const enriched = await Promise.all(
+    normalizedPaths.map(async (filePath) => {
+      try {
+        const stats = await fs.stat(filePath);
+        return {
+          path: filePath,
+          lastModified: normalizeLastModified(stats.mtime),
+        };
+      } catch {
+        return {
+          path: filePath,
+          lastModified: "",
+        };
+      }
+    }),
+  );
+  return enriched;
+}
+
 function resolveFilePathInLookup(filePath, lookup) {
   const normalized = normalizePathForCompare(filePath);
   if (!normalized) {
@@ -241,6 +280,7 @@ function normalizeUploadFiles(uploadFiles, onProgress = null) {
     normalized.push({
       path: filePath,
       content,
+      lastModified: normalizeLastModified(item.lastModified),
     });
 
     onProgress?.({
@@ -276,8 +316,14 @@ async function collectPathRecursiveSources(session, targetPath, onProgress = nul
     }
 
     let rawContent;
+    let lastModified = "";
     try {
-      rawContent = await fs.readFile(current);
+      const [stats, contentBuffer] = await Promise.all([
+        fs.stat(current),
+        fs.readFile(current),
+      ]);
+      rawContent = contentBuffer;
+      lastModified = normalizeLastModified(stats.mtime);
     } catch {
       continue;
     }
@@ -285,6 +331,7 @@ async function collectPathRecursiveSources(session, targetPath, onProgress = nul
     sources.push({
       path: current,
       content,
+      lastModified,
     });
 
     processed += 1;
@@ -318,7 +365,13 @@ function collectUploadRecursiveSources(session, targetPath, onProgress = null) {
   const contentByPath = new Map(
     (session.files || [])
       .filter((item) => item && typeof item.path === "string")
-      .map((item) => [String(item.path), String(item.content || "")]),
+      .map((item) => [
+        String(item.path),
+        {
+          content: String(item.content || ""),
+          lastModified: normalizeLastModified(item.lastModified),
+        },
+      ]),
   );
 
   const queue = [selectedFilePath];
@@ -333,14 +386,15 @@ function collectUploadRecursiveSources(session, targetPath, onProgress = null) {
     }
     visited.add(current);
 
-    const content = contentByPath.get(current);
-    if (content == null) {
+    const sourceEntry = contentByPath.get(current);
+    if (!sourceEntry) {
       continue;
     }
 
     sources.push({
       path: current,
-      content,
+      content: sourceEntry.content,
+      lastModified: sourceEntry.lastModified,
     });
 
     processed += 1;
@@ -349,7 +403,7 @@ function collectUploadRecursiveSources(session, targetPath, onProgress = null) {
       totalFiles: Math.max(processed + queue.length, processed),
     });
 
-    const includeRefs = extractIncludedReferences(content);
+    const includeRefs = extractIncludedReferences(sourceEntry.content);
     for (const ref of includeRefs) {
       const matched = findIncludedFilePath(ref.value, current, lookup);
       if (matched && !visited.has(matched)) {
@@ -454,17 +508,18 @@ app.post("/api/analyze/paths", async (req, res) => {
         progress: 5,
       });
 
-      const { files, missing } = await collectSupportedFiles(paths);
+      const { files: filePaths, missing } = await collectSupportedFiles(paths);
 
       analysisJobStore.updateJob(job.id, {
         status: "running",
         stage: "prepare-session",
-        message: `Preparando sesión de trabajo (${files.length} archivos)...`,
+        message: `Preparando sesión de trabajo (${filePaths.length} archivos)...`,
         progress: 80,
-        processedFiles: files.length,
-        totalFiles: files.length,
+        processedFiles: filePaths.length,
+        totalFiles: filePaths.length,
       });
 
+      const files = await enrichPathEntriesWithLastModified(filePaths);
       const session = analysisSessionStore.createSession("path", {
         files,
         missingPaths: missing,

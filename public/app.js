@@ -69,6 +69,20 @@ function decodeTextFromArrayBuffer(arrayBuffer) {
   }
 }
 
+function formatDateTime(value) {
+  if (value == null || value === "") {
+    return "";
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const pad = (num) => String(num).padStart(2, "0");
+  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 function clearPreviewState() {
   renderedFilesByPath = new Map();
   previewContentCache.clear();
@@ -539,15 +553,19 @@ function renderSessionCatalog(session) {
           visibleFiles.length > 0
             ? visibleFiles
                 .map(
-                  (item) => `
+                  (item) => {
+                    const lastUpdatedLabel = formatDateTime(item.lastModified) || "N/D";
+                    return `
                     <button
                       type="button"
                       class="session-file-item"
                       data-file-path="${escapeAttribute(item.path)}"
                     >
                       <code class="session-file-path">${escapeHtml(item.path)}</code>
+                      <span class="session-file-meta">| Última actualización: ${escapeHtml(lastUpdatedLabel)}</span>
                     </button>
-                  `,
+                  `;
+                  },
                 )
                 .join("")
             : '<div class="empty-row">No hay archivos que coincidan con el filtro.</div>'
@@ -622,6 +640,7 @@ function renderFindingsRows(findings, files = [], options = {}) {
       const fileFindings = groupedByFile.get(filePath) || [];
       const hasFindings = fileFindings.length > 0;
       const fileInfo = filesByPath.get(filePath) || {};
+      const lastUpdatedLabel = formatDateTime(fileInfo.lastModified) || "N/D";
       const includeReferences = Array.isArray(fileInfo.includeReferences)
         ? fileInfo.includeReferences
         : [];
@@ -723,7 +742,10 @@ function renderFindingsRows(findings, files = [], options = {}) {
       return `
         <details id="${escapeAttribute(fileIdByPath.get(filePath) || "")}" data-file-path="${escapeAttribute(filePath)}" class="file-group" ${!collapseAll && fileIndex === 0 ? "open" : ""}>
           <summary>
-            <span class="file-summary-main"><code>${escapeHtml(filePath)}</code></span>
+            <span class="file-summary-main">
+              <code>${escapeHtml(filePath)}</code>
+              <span class="file-summary-updated">| Última actualización: ${escapeHtml(lastUpdatedLabel)}</span>
+            </span>
             <span class="file-chip">${fileFindings.length} incidencias</span>
             <span class="file-chip removed-chip">${severityCounts.removed} removed</span>
             <span class="file-chip deprecated-chip">${severityCounts.deprecated} deprecated</span>
@@ -1301,6 +1323,9 @@ async function analyzeUploads() {
       payload.push({
         path: item.path,
         contentBase64: arrayBufferToBase64(binaryContent),
+        lastModified: Number.isFinite(Number(item.file.lastModified))
+          ? Number(item.file.lastModified)
+          : null,
       });
     }
 

@@ -56,11 +56,13 @@ class AnalysisSessionStore {
           return {
             path: item,
             sourceType: session.type === "upload" ? "upload" : "path",
+            lastModified: "",
           };
         }
         return {
           path: String(item.path || ""),
           sourceType: session.type === "upload" ? "upload" : "path",
+          lastModified: String(item.lastModified || ""),
         };
       }),
       missingPaths: session.missingPaths || [],
@@ -104,4 +106,3 @@ module.exports = {
   AnalysisSessionStore,
   analysisSessionStore,
 };
-
