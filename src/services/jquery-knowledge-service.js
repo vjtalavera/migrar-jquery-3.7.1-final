@@ -87,6 +87,8 @@ const MANUAL_SOLUTIONS = {
 
 const AMBIGUOUS_RULES = new Set(["load-shorthand", "toggle-event"]);
 const JQUERY_START_REGEX = /(?:\$jq|\$|jQuery)\s*(?:\(|\.)/;
+const JQUERY_DOLLAR_RECEIVER_REGEX =
+  /(?:^|[^\w$])(?:this\s*\.\s*)?\$[A-Za-z_][\w$]*\s*\./;
 const SELECTOR_ARG_METHODS = new Set([
   "add",
   "addBack",
@@ -107,6 +109,41 @@ const SELECTOR_ARG_METHODS = new Set([
   "prevUntil",
   "siblings",
 ]);
+
+function hasLikelyJQueryReceiverContext(leftText) {
+  const left = String(leftText || "");
+  if (!left) {
+    return false;
+  }
+  if (JQUERY_START_REGEX.test(left)) {
+    return true;
+  }
+
+  const candidate = left.trim().replace(/[)\]}]+$/, "").trim();
+  if (!candidate) {
+    return false;
+  }
+  const receiverMatch = candidate.match(
+    /([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*$/,
+  );
+  if (!receiverMatch) {
+    return false;
+  }
+  const receiver = receiverMatch[1].replace(/\s+/g, "");
+  return (
+    receiver.startsWith("$") ||
+    receiver.startsWith("this.$") ||
+    receiver.includes(".$")
+  );
+}
+
+function hasLikelyJQueryLineContext(line) {
+  const text = String(line || "");
+  if (!text) {
+    return false;
+  }
+  return JQUERY_START_REGEX.test(text) || JQUERY_DOLLAR_RECEIVER_REGEX.test(text);
+}
 const EXTRA_MIGRATION_RULES = [
   {
     title: ".ready() (syntaxis legacy deprecada)",
@@ -772,7 +809,7 @@ function getLineMatchesForRule(line, rule) {
         continue;
       }
       const left = line.slice(0, match.index);
-      if (!JQUERY_START_REGEX.test(left)) {
+      if (!hasLikelyJQueryReceiverContext(left)) {
         continue;
       }
 
@@ -794,7 +831,7 @@ function getLineMatchesForRule(line, rule) {
       }
 
       const left = line.slice(0, match.index);
-      if (!JQUERY_START_REGEX.test(left)) {
+      if (!hasLikelyJQueryReceiverContext(left)) {
         continue;
       }
 
@@ -815,7 +852,7 @@ function getLineMatchesForRule(line, rule) {
         continue;
       }
       const left = line.slice(0, match.index);
-      if (!JQUERY_START_REGEX.test(left)) {
+      if (!hasLikelyJQueryReceiverContext(left)) {
         continue;
       }
 
@@ -861,7 +898,7 @@ function getLineMatchesForRule(line, rule) {
       });
     }
   } else if (detection.kind === "selector") {
-    if (!JQUERY_START_REGEX.test(line)) {
+    if (!hasLikelyJQueryLineContext(line)) {
       return matches;
     }
     const selectorMatches = getSelectorMatchesInJQueryCalls(line, detection.token);
@@ -1007,7 +1044,7 @@ function getSelectorMatchesInJQueryCalls(line, token) {
     }
 
     const left = text.slice(0, methodMatch.index);
-    if (!JQUERY_START_REGEX.test(left)) {
+    if (!hasLikelyJQueryReceiverContext(left)) {
       continue;
     }
 

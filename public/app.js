@@ -21,6 +21,7 @@ const ALLOWED_EXTENSIONS = new Set([".jsp", ".js", ".html", ".htm"]);
 const MAX_INITIAL_RENDERED_FILE_GROUPS = 600;
 const uploadFilesByPath = new Map();
 let renderedFilesByPath = new Map();
+let renderedFindingsByFile = new Map();
 const previewContentCache = new Map();
 const previewContentLoaders = new Map();
 let includesScrollSyncRaf = 0;
@@ -85,6 +86,7 @@ function formatDateTime(value) {
 
 function clearPreviewState() {
   renderedFilesByPath = new Map();
+  renderedFindingsByFile = new Map();
   previewContentCache.clear();
   previewContentLoaders.clear();
 }
@@ -523,6 +525,77 @@ function fileBaseName(filePath) {
   return chunks[chunks.length - 1] || normalized;
 }
 
+function buildCorrectedDownloadName(filePath) {
+  const original = fileBaseName(filePath) || "archivo";
+  const dotIndex = original.lastIndexOf(".");
+  if (dotIndex <= 0) {
+    return `${original}.corregido`;
+  }
+  return `${original.slice(0, dotIndex)}.corregido${original.slice(dotIndex)}`;
+}
+
+function buildCorrectedLinesByNumber(findings) {
+  const corrections = new Map();
+  for (const item of findings || []) {
+    const lineNumber = Number(item?.line);
+    if (!Number.isInteger(lineNumber) || lineNumber <= 0) {
+      continue;
+    }
+    const correctedLine = String(item?.correctedInstruction || "");
+    if (!correctedLine.trim()) {
+      continue;
+    }
+    const existing = corrections.get(lineNumber) || "";
+    if (!existing || correctedLine.length > existing.length) {
+      corrections.set(lineNumber, correctedLine);
+    }
+  }
+  return corrections;
+}
+
+function applyCorrectionsToContent(content, correctionsByLine) {
+  const raw = String(content || "");
+  const normalized = raw.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
+  const lines = normalized.split("\n");
+
+  correctionsByLine.forEach((correctedLine, lineNumber) => {
+    const index = lineNumber - 1;
+    if (index >= 0 && index < lines.length) {
+      lines[index] = correctedLine;
+    }
+  });
+
+  const eol = raw.includes("\r\n") ? "\r\n" : raw.includes("\r") ? "\r" : "\n";
+  return lines.join(eol);
+}
+
+function downloadTextFile(fileName, content) {
+  const blob = new Blob(["\uFEFF", String(content || "")], {
+    type: "text/plain;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+async function downloadCorrectedFile(filePath) {
+  const fileFindings = renderedFindingsByFile.get(filePath) || [];
+  const correctionsByLine = buildCorrectedLinesByNumber(fileFindings);
+  if (correctionsByLine.size === 0) {
+    throw new Error("Este archivo no tiene correcciones recomendadas para exportar.");
+  }
+
+  const originalContent = await loadPreviewContent(filePath);
+  const correctedContent = applyCorrectionsToContent(originalContent, correctionsByLine);
+  const downloadName = buildCorrectedDownloadName(filePath);
+  downloadTextFile(downloadName, correctedContent);
+}
+
 function getFilteredSessionFiles(session) {
   const files = Array.isArray(session?.files) ? session.files : [];
   const needle = catalogFilterText.trim().toLowerCase();
@@ -589,6 +662,7 @@ function renderFindingsRows(findings, files = [], options = {}) {
   const analyzedFilePaths = files.map((file) => file.path);
 
   if (!findings.length && analyzedFilePaths.length === 0) {
+    renderedFindingsByFile = new Map();
     elements.groupedResults.innerHTML = `
       <div class="empty-row empty-block">No se detectaron APIs deprecadas/obsoletas con las reglas cargadas.</div>
     `;
@@ -602,6 +676,7 @@ function renderFindingsRows(findings, files = [], options = {}) {
     }
     groupedByFile.get(finding.file).push(finding);
   }
+  renderedFindingsByFile = groupedByFile;
 
   const includeTargetPaths = new Set();
   for (const file of files) {
@@ -648,6 +723,9 @@ function renderFindingsRows(findings, files = [], options = {}) {
         removed: fileFindings.filter((item) => item.severity === "removed").length,
         deprecated: fileFindings.filter((item) => item.severity === "deprecated").length,
       };
+      const hasDownloadableCorrection = fileFindings.some((item) =>
+        String(item.correctedInstruction || "").trim().length > 0,
+      );
       const includedFilesWithIssues = new Set();
       for (const ref of includeReferences) {
         const matchedFilePath = findIncludedFilePath(ref.value, analyzedFilePaths);
@@ -750,6 +828,11 @@ function renderFindingsRows(findings, files = [], options = {}) {
             <span class="file-chip removed-chip">${severityCounts.removed} removed</span>
             <span class="file-chip deprecated-chip">${severityCounts.deprecated} deprecated</span>
             <span class="file-chip include-issue-chip">${includesWithIssuesCount} incluidos con incidencias</span>
+            ${
+              hasDownloadableCorrection
+                ? `<button type="button" class="file-download-corrected-btn" data-file-path="${escapeAttribute(filePath)}">Descargar corregido</button>`
+                : ""
+            }
           </summary>
           <div class="table-wrap">
             <table class="file-results-table">
@@ -1041,10 +1124,35 @@ function enableIncludeNavigation() {
     });
 }
 
+function enableCorrectedFileDownload() {
+  elements.groupedResults
+    .querySelectorAll(".file-download-corrected-btn[data-file-path]")
+    .forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!(button instanceof HTMLButtonElement) || button.disabled) {
+          return;
+        }
+        const filePath = button.dataset.filePath;
+        if (!filePath) {
+          return;
+        }
+        button.disabled = true;
+        downloadCorrectedFile(filePath)
+          .catch(showError)
+          .finally(() => {
+            button.disabled = false;
+          });
+      });
+    });
+}
+
 function bindResultsInteractions() {
   enableFindingLineNavigation();
   enableFilePreviewBySummary();
   enableIncludeNavigation();
+  enableCorrectedFileDownload();
   scheduleIncludesScrollSync();
 
   const showAllBtn = document.getElementById("showAllResultsBtn");

@@ -17,6 +17,45 @@ test("detecta .size() en cadena jQuery", () => {
   assert.equal(matches.length, 1);
 });
 
+test("detecta .click() deprecado sobre variable jQuery con prefijo $", () => {
+  const rule = {
+    slug: "click-shorthand",
+    detection: {
+      kind: "instanceMethod",
+      token: "click",
+    },
+  };
+  const line = "$headers.click(function (e) {";
+  const matches = getLineMatchesForRule(line, rule);
+  assert.equal(matches.length, 1);
+});
+
+test("detecta .click() deprecado sobre this.$alias", () => {
+  const rule = {
+    slug: "click-shorthand",
+    detection: {
+      kind: "instanceMethod",
+      token: "click",
+    },
+  };
+  const line = "this.$headers.click(function (e) {";
+  const matches = getLineMatchesForRule(line, rule);
+  assert.equal(matches.length, 1);
+});
+
+test("no detecta .click() en variable sin contexto jQuery", () => {
+  const rule = {
+    slug: "click-shorthand",
+    detection: {
+      kind: "instanceMethod",
+      token: "click",
+    },
+  };
+  const line = "headers.click(function (e) {";
+  const matches = getLineMatchesForRule(line, rule);
+  assert.equal(matches.length, 0);
+});
+
 test("detecta $.parseJSON()", () => {
   const rule = {
     slug: "jQuery.parseJSON",
@@ -181,6 +220,19 @@ test("detecta :first dentro de selector en argumento de metodo jQuery", () => {
   };
 
   const line = 'var fc = $jq("#nombreForm").parents(\'form:first\').attr("name");';
+  const matches = getLineMatchesForRule(line, rule);
+  assert.equal(matches.length, 1);
+});
+
+test("detecta selector :first sobre variable jQuery con prefijo $", () => {
+  const rule = {
+    slug: "first-selector",
+    detection: {
+      kind: "selector",
+      token: "first",
+    },
+  };
+  const line = "$headers.find('li:first').addClass('active');";
   const matches = getLineMatchesForRule(line, rule);
   assert.equal(matches.length, 1);
 });
